@@ -1,0 +1,14 @@
+# Render Blueprint: GitHub 저장소를 연결하면 이 설정대로 웹 서비스가 만들어진다.
+# 부스/대기열 상태를 서버 메모리에 두는 싱글 인스턴스 구조라서 인스턴스는 반드시 1개로 유지한다.
+services:
+  - type: web
+    name: open-toilet
+    runtime: node
+    plan: free
+    numInstances: 1
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
