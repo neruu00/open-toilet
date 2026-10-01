@@ -1,0 +1,16 @@
+{
+  "name": "open-toilet",
+  "private": true,
+  "type": "module",
+  "workspaces": ["packages/*", "apps/*"],
+  "scripts": {
+    "dev": "concurrently -n server,web -c blue,green \"npm run dev -w @open-toilet/server\" \"npm run dev -w @open-toilet/web\"",
+    "build": "npm run build -w @open-toilet/web",
+    "start": "npm run start -w @open-toilet/server",
+    "test": "npm test -w @open-toilet/server",
+    "typecheck": "npm run typecheck -w @open-toilet/server && npm run typecheck -w @open-toilet/web"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0"
+  }
+}
