@@ -23,6 +23,10 @@ export interface ClientState {
   nameError: string | null;
   notice: string | null;
   activities: Activity[];
+  /** 화면에 잠깐 터지는 파티클 효과 (id는 sound.play의 eventId) */
+  effects: { id: string }[];
+  /** userId → 머리 위에 떠 있는 말풍선 */
+  bubbles: Record<string, { id: string; text: string }>;
   /** 서버 시각 - 로컬 시각 */
   clockOffset: number;
   audioLocked: boolean;
@@ -34,9 +38,11 @@ const TOKEN_KEY = 'open-toilet.token';
 const WATCHDOG_MS = 30_000;
 const SOUND_MAX_AGE_MS = 2_000;
 const MAX_CONCURRENT_EVENT_IDS = 256;
+const EFFECT_MS = 1_800;
 
 const ACTION_TEXT: Record<ActionType, string> = {
   fart: '방귀를 뀌었습니다 💨',
+  poop: '똥을 쌌습니다 💩',
   flush: '물을 내렸습니다 🚽',
   knock: '문을 두드립니다 ✊',
 };
@@ -52,6 +58,8 @@ export class GameClient {
     nameError: null,
     notice: null,
     activities: [],
+    effects: [],
+    bubbles: {},
     clockOffset: 0,
     audioLocked: true,
     muted: sound.muted,
@@ -68,6 +76,7 @@ export class GameClient {
   private pending = new Map<string, { resolve: (ok: boolean) => void }>();
   private seenEventIds: string[] = [];
   private noticeTimer: number | null = null;
+  private bubbleTimers = new Map<string, number>();
   private watchdog: number | null = null;
   private started = false;
 
@@ -150,6 +159,7 @@ export class GameClient {
   cancelQueue = () => this.request('queue.cancel', {});
   perform = (action: ActionType) => this.request('action.perform', { action });
   sync = () => this.request('state.sync', {});
+  chat = (text: string) => this.request('chat.send', { text });
 
   // ---------- 연결 ----------
 
@@ -297,6 +307,9 @@ export class GameClient {
       case 'sound.play':
         this.onSound(message.payload, message.serverTime);
         break;
+      case 'chat.message':
+        this.onChat(message.payload);
+        break;
       case 'heartbeat.ping':
         this.rawSend({ type: 'heartbeat.pong', payload: { nonce: message.payload.nonce } });
         break;
@@ -349,8 +362,33 @@ export class GameClient {
       this.set({ activities: this.state.activities.filter((a) => a.id !== activity.id) });
     }, 4_000);
 
-    if (serverTime - payload.occurredAt > SOUND_MAX_AGE_MS) return; // 오래된 소리는 재생하지 않는다
+    if (serverTime - payload.occurredAt > SOUND_MAX_AGE_MS) return; // 오래된 소리·효과는 재생하지 않는다
     sound.play(payload.action);
+    if (payload.action === 'poop') this.addEffect(payload.eventId);
+  }
+
+  private addEffect(id: string): void {
+    this.set({ effects: [...this.state.effects, { id }] });
+    window.setTimeout(() => {
+      this.set({ effects: this.state.effects.filter((e) => e.id !== id) });
+    }, EFFECT_MS);
+  }
+
+  /** 말풍선은 글자 수에 비례해 5~10초 동안 보이고, 같은 사람의 새 메시지가 오면 교체된다. */
+  private onChat(payload: { messageId: string; userId: string; text: string }): void {
+    const { userId, messageId, text } = payload;
+    const previous = this.bubbleTimers.get(userId);
+    if (previous !== undefined) window.clearTimeout(previous);
+    this.set({ bubbles: { ...this.state.bubbles, [userId]: { id: messageId, text } } });
+    const visibleMs = Math.min(10_000, 5_000 + [...text].length * 80);
+    this.bubbleTimers.set(
+      userId,
+      window.setTimeout(() => {
+        this.bubbleTimers.delete(userId);
+        const { [userId]: _removed, ...rest } = this.state.bubbles;
+        this.set({ bubbles: rest });
+      }, visibleMs),
+    );
   }
 
   // ---------- 보조 ----------

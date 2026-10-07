@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 import type { Participant, Snapshot } from '@open-toilet/protocol';
 
 interface SceneProps {
@@ -5,6 +6,58 @@ interface SceneProps {
   selfId: string;
   /** 서버 시각 기준 현재 시각(ms) */
   serverNow: number;
+  /** userId -> 말풍선 */
+  bubbles: Record<string, { id: string; text: string }>;
+  /** 부스 주변에 터지는 똥 파티클 효과 */
+  effects: { id: string }[];
+}
+
+const POOP_COLORS = ['#4a2c12', '#5b3a1e', '#6f4518', '#7a4e24', '#8a5a2b'];
+
+/** 효과 id로 항상 같은 난수열을 만든다. 화면이 다시 그려져도 파티클 값이 바뀌어 애니메이션이 튀지 않는다. */
+function seededRandom(seed: string): () => number {
+  let h = 1779033703 ^ seed.length;
+  for (let i = 0; i < seed.length; i++) {
+    h = Math.imul(h ^ seed.charCodeAt(i), 3432918353);
+    h = (h << 13) | (h >>> 19);
+  }
+  return () => {
+    h = Math.imul(h ^ (h >>> 16), 2246822507);
+    h = Math.imul(h ^ (h >>> 13), 3266489909);
+    h ^= h >>> 16;
+    return (h >>> 0) / 4294967296;
+  };
+}
+
+/** 부스 주변으로 사방에 튀어 나가는 갈색 파티클 */
+function PoopBurst({ id }: { id: string }) {
+  const rand = seededRandom(id);
+  const particles = Array.from({ length: 26 }, (_, i) => {
+    const angle = rand() * Math.PI * 2;
+    // 부스 중심에서 모든 방향으로 고르게 퍼진다 (가까운 것부터 먼 것까지 섞어 입체감을 준다)
+    const distance = 90 + rand() * 170;
+    return {
+      key: i,
+      r: 3 + rand() * 6,
+      color: POOP_COLORS[Math.floor(rand() * POOP_COLORS.length)],
+      dx: Math.cos(angle) * distance * 1.2,
+      dy: Math.sin(angle) * distance,
+      delay: rand() * 0.1,
+    };
+  });
+  return (
+    <g className="poop-burst" transform={`translate(${CX} ${GROUND_Y - 100})`} aria-hidden="true">
+      {particles.map((p) => (
+        <circle
+          key={p.key}
+          className="poop-particle"
+          r={p.r}
+          fill={p.color}
+          style={{ '--dx': `${p.dx}px`, '--dy': `${p.dy}px`, animationDelay: `${p.delay}s` } as CSSProperties}
+        />
+      ))}
+    </g>
+  );
 }
 
 const VIEW_W = 1000;
@@ -189,7 +242,74 @@ function participantLabel(p: Participant | undefined): string {
   return p?.name ?? '?';
 }
 
-export function Scene({ snapshot, selfId, serverNow }: SceneProps) {
+/** 이름이 차지하는 대략적인 가로 폭(px). 한글·한자·이모지는 넓게, 영문·숫자는 좁게 센다. */
+function textWidth(text: string): number {
+  let width = 0;
+  for (const ch of text) width += (ch.codePointAt(0) ?? 0) > 0x2e7f ? 15.5 : 8.6;
+  return width;
+}
+
+/** 사람 한 명이 차지하는 가로 폭: 이름이 전부 보이도록 이름 폭을 기준으로 한다. */
+function slotWidth(name: string): number {
+  return Math.max(70, textWidth(name) + 18);
+}
+
+interface Placed<T> {
+  item: T;
+  x: number;
+  row: number;
+}
+
+/** 폭을 고려해 줄바꿈하며 배치한다. 이름이 길수록 간격이 넓어져 서로 가려지지 않는다. */
+function flowLayout<T>(
+  items: T[],
+  widthOf: (item: T) => number,
+  left: number,
+  right: number,
+  align: 'left' | 'center',
+): { placed: Placed<T>[]; rows: number } {
+  const rows: T[][] = [[]];
+  let used = 0;
+  for (const item of items) {
+    const w = widthOf(item);
+    if (used + w > right - left && rows[rows.length - 1].length > 0) {
+      rows.push([]);
+      used = 0;
+    }
+    rows[rows.length - 1].push(item);
+    used += w;
+  }
+  const placed: Placed<T>[] = [];
+  rows.forEach((row, rowIndex) => {
+    const total = row.reduce((sum, item) => sum + widthOf(item), 0);
+    let cursor = align === 'center' ? left + (right - left - total) / 2 : left;
+    for (const item of row) {
+      const w = widthOf(item);
+      placed.push({ item, x: cursor + w / 2, row: rowIndex });
+      cursor += w;
+    }
+  });
+  return { placed, rows: items.length === 0 ? 0 : rows.length };
+}
+
+/** 말풍선: 앵커(머리 위) 바로 위에 아래쪽 꼬리가 앵커를 향하도록 그린다. */
+function Bubble({ x, y, text }: { x: number; y: number; text: string }) {
+  const height = 120;
+  return (
+    <foreignObject x={x - 130} y={y - height} width="260" height={height} className="bubble-layer">
+      <div className="bubble-wrap">
+        <div className="bubble" role="status">
+          {text}
+        </div>
+      </div>
+    </foreignObject>
+  );
+}
+
+const QUEUE_ROW_GAP = 140;
+const IDLE_ROW_GAP = 110;
+
+export function Scene({ snapshot, selfId, serverNow, bubbles, effects }: SceneProps) {
   const byId = new Map(snapshot.participants.map((p) => [p.userId, p]));
   const occupant = snapshot.booth.occupantId ? byId.get(snapshot.booth.occupantId) : undefined;
   const open = !snapshot.booth.occupantId;
@@ -197,23 +317,41 @@ export function Scene({ snapshot, selfId, serverNow }: SceneProps) {
   const queued = new Set(snapshot.queue);
   const idle = snapshot.participants.filter((p) => p.userId !== snapshot.booth.occupantId && !queued.has(p.userId));
 
-  const idleCols = 14;
-  const idleRows = Math.max(1, Math.ceil(idle.length / idleCols));
-  const viewH = 640 + (idleRows - 1) * 90;
-  const queueSpacing = Math.min(56, 330 / Math.max(snapshot.queue.length, 1));
+  // 대기열: 부스 오른쪽에서 이름 폭만큼 간격을 벌리고, 공간이 모자라면 다음 줄로 내린다
+  const queueItems = snapshot.queue.map((userId, index) => ({ userId, index, p: byId.get(userId) }));
+  const queueLayout = flowLayout(
+    queueItems,
+    (q) => slotWidth(participantLabel(q.p)),
+    CX + BOOTH_HALF_WIDTH + 50,
+    VIEW_W - 16,
+    'left',
+  );
+  const queueBottomRow = Math.max(0, queueLayout.rows - 1);
 
-  let tagText: string | null = null;
+  // 나머지 접속자: 아래쪽에 가운데 정렬. 대기열이 여러 줄이면 그 아래로 내린다
+  const idleBaseY = GROUND_Y + 8 + (queueBottomRow > 0 ? queueBottomRow * QUEUE_ROW_GAP : 0) + 150;
+  const idleLayout = flowLayout(idle, (p) => slotWidth(p.name), 16, VIEW_W - 16, 'center');
+
+  const lastQueueY = GROUND_Y + 8 + queueBottomRow * QUEUE_ROW_GAP;
+  const lastIdleY = idleBaseY + Math.max(0, idleLayout.rows - 1) * IDLE_ROW_GAP;
+  const viewH = Math.max(640, (idle.length > 0 ? lastIdleY : lastQueueY) + 90);
+
+  // 부스 이름표는 두 줄: 이름(전부 표시) / 상태·타이머. 이름이 길어도 타이머가 가려지지 않는다
+  let tagName: string | null = null;
+  let tagSub: string | null = null;
   let tagClass = 'tag';
   if (occupant) {
     const since = snapshot.booth.occupiedSince;
-    const elapsed = since === null ? '' : ` · ${formatElapsed(serverNow - since)}`;
-    tagText =
-      (occupant.status === 'disconnected' ? `${occupant.name} (연결 끊김)` : occupant.name) + elapsed;
+    tagName = occupant.name;
+    tagSub = [since === null ? null : formatElapsed(serverNow - since), occupant.status === 'disconnected' ? '연결 끊김' : null]
+      .filter(Boolean)
+      .join(' · ');
     tagClass += ' tag--busy';
   } else if (snapshot.priority) {
     const target = byId.get(snapshot.priority.userId);
     const left = Math.max(0, Math.ceil((snapshot.priority.expiresAt - serverNow) / 1000));
-    tagText = `${participantLabel(target)}님 우선 입장 · ${left}초`;
+    tagName = `${participantLabel(target)}님`;
+    tagSub = `우선 입장 · ${left}초`;
     tagClass += ' tag--reserved';
   }
 
@@ -224,6 +362,16 @@ export function Scene({ snapshot, selfId, serverNow }: SceneProps) {
       : '부스 비어 있음';
 
   const boothTopY = GROUND_Y - BOOTH_HEIGHT_LOCAL * BOOTH_SCALE;
+  const tagBoxY = boothTopY - 70;
+
+  // 말풍선은 모든 사람 위에 겹쳐 그리려고 마지막에 따로 그린다
+  const bubbleNodes: { key: string; x: number; y: number; text: string }[] = [];
+  const addBubble = (userId: string, x: number, y: number) => {
+    const bubble = bubbles[userId];
+    if (bubble) bubbleNodes.push({ key: `${userId}:${bubble.id}`, x, y, text: bubble.text });
+  };
+
+  if (occupant) addBubble(occupant.userId, CX, tagBoxY - 4);
 
   return (
     <svg
@@ -237,50 +385,61 @@ export function Scene({ snapshot, selfId, serverNow }: SceneProps) {
         <Booth open={open} busy={!open} />
       </g>
 
+      {effects.map((effect) => (
+        <PoopBurst key={effect.id} id={effect.id} />
+      ))}
+
       {/* 부스 위 이름표 */}
-      {tagText && (
-        <foreignObject x={CX - 140} y={boothTopY - 52} width="280" height="44">
-          <div className={tagClass}>{tagText}</div>
+      {tagName && (
+        <foreignObject x={CX - 260} y={tagBoxY} width="520" height="64">
+          <div className="tag-box">
+            <div className={tagClass}>
+              <span className="tag-name">{tagName}</span>
+              {tagSub && <span className="tag-sub">{tagSub}</span>}
+            </div>
+          </div>
         </foreignObject>
       )}
 
-      {/* 대기열: 부스 오른쪽에 줄 서기 */}
-      {snapshot.queue.map((userId, index) => {
-        const p = byId.get(userId);
-        const isPriority = snapshot.priority?.userId === userId;
+      {/* 대기열 */}
+      {queueLayout.placed.map(({ item, x, row }) => {
+        const y = GROUND_Y + 8 + row * QUEUE_ROW_GAP;
+        addBubble(item.userId, x, y - 112);
+        const isPriority = snapshot.priority?.userId === item.userId;
         return (
           <Person
-            key={userId}
-            x={CX + BOOTH_HALF_WIDTH + 90 + index * queueSpacing}
-            y={GROUND_Y + 8}
-            name={participantLabel(p)}
-            isSelf={userId === selfId}
-            dim={p?.status === 'disconnected'}
-            badge={isPriority ? '입장 차례!' : `${index + 1}번`}
-            sub={p?.status === 'disconnected' ? '연결 끊김' : undefined}
+            key={item.userId}
+            x={x}
+            y={y}
+            name={participantLabel(item.p)}
+            isSelf={item.userId === selfId}
+            dim={item.p?.status === 'disconnected'}
+            badge={isPriority ? '입장 차례!' : `${item.index + 1}번`}
+            sub={item.p?.status === 'disconnected' ? '연결 끊김' : undefined}
           />
         );
       })}
 
       {/* 부스 사용자는 문 뒤에 있으므로 따로 그리지 않는다 */}
-      {idle.map((p, index) => {
-        const row = Math.floor(index / idleCols);
-        const col = index % idleCols;
-        const count = Math.min(idleCols, idle.length - row * idleCols);
-        const spacing = 62;
-        const startX = CX - ((count - 1) * spacing) / 2;
+      {idleLayout.placed.map(({ item, x, row }) => {
+        const y = idleBaseY + row * IDLE_ROW_GAP;
+        addBubble(item.userId, x, y - 112);
         return (
           <Person
-            key={p.userId}
-            x={startX + col * spacing}
-            y={GROUND_Y + 150 + row * 90}
-            name={p.name}
-            isSelf={p.userId === selfId}
-            dim={p.status === 'disconnected'}
-            sub={p.status === 'disconnected' ? '연결 끊김' : undefined}
+            key={item.userId}
+            x={x}
+            y={y}
+            name={item.name}
+            isSelf={item.userId === selfId}
+            dim={item.status === 'disconnected'}
+            sub={item.status === 'disconnected' ? '연결 끊김' : undefined}
           />
         );
       })}
+
+      {bubbleNodes.map((b) => (
+        <Bubble key={b.key} x={b.x} y={b.y} text={b.text} />
+      ))}
     </svg>
   );
 }

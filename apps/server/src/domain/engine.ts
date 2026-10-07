@@ -33,6 +33,7 @@ interface Session {
   status: 'connected' | 'disconnected';
   graceExpiresAt: number | null;
   cooldownUntil: Record<ActionType, number>;
+  chatCooldownUntil: number;
 }
 
 interface Conn {
@@ -272,6 +273,8 @@ export class Engine {
         return this.cancelQueue(conn, session, requestId);
       case 'action.perform':
         return this.performAction(conn, session, requestId, payload.action);
+      case 'chat.send':
+        return this.sendChat(conn, session, requestId, payload.text);
       default:
         return this.sendError(conn, requestId, 'UNKNOWN_EVENT');
     }
@@ -303,7 +306,8 @@ export class Engine {
       connId: conn.id,
       status: 'connected',
       graceExpiresAt: null,
-      cooldownUntil: { fart: 0, flush: 0, knock: 0 },
+      cooldownUntil: { fart: 0, poop: 0, flush: 0, knock: 0 },
+      chatCooldownUntil: 0,
     };
     this.sessions.set(session.userId, session);
     this.tokens.set(session.token, session.userId);
@@ -480,6 +484,34 @@ export class Engine {
         this.send(target.connId, {
           type: 'sound.play',
           payload: { eventId, actorId: session.userId, action: type, occurredAt: now },
+        });
+      }
+    }
+  }
+
+  /** 채팅: 저장하지 않고 현재 연결된 전원에게 그대로 전달한다. */
+  private sendChat(conn: Conn, session: Session, requestId: string, raw: unknown): void {
+    if (typeof raw !== 'string') return this.sendError(conn, requestId, 'BAD_REQUEST');
+    const text = raw.normalize('NFC').trim();
+    const length = [...text].length;
+    if (length < 1 || length > this.config.chatMaxLength || /\p{Cc}/u.test(text)) {
+      return this.sendError(conn, requestId, 'BAD_REQUEST');
+    }
+    const now = this.now();
+    if (now < session.chatCooldownUntil) {
+      return this.sendError(conn, requestId, 'COOLDOWN', {
+        retryAfterMs: session.chatCooldownUntil - now,
+        cooldownUntil: session.chatCooldownUntil,
+      });
+    }
+    session.chatCooldownUntil = now + this.config.chatCooldownMs;
+    this.ok(conn, requestId, 'chat.send');
+    const messageId = `msg_${randomBytes(6).toString('hex')}`;
+    for (const target of this.sessions.values()) {
+      if (target.connId) {
+        this.send(target.connId, {
+          type: 'chat.message',
+          payload: { messageId, userId: session.userId, text, at: now },
         });
       }
     }

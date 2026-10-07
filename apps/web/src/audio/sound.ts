@@ -106,6 +106,49 @@ class SoundPlayer {
       master.gain.setValueAtTime(0.7, t0 + 1.8);
       master.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
       sources.push(src);
+    } else if (action === 'poop') {
+      duration = 1.2;
+      master.gain.value = 1;
+      // 뿌지직: 낮은 노이즈가 떨리듯 이어진다
+      const noise = ctx.createBufferSource();
+      noise.buffer = this.noise(ctx);
+      const low = ctx.createBiquadFilter();
+      low.type = 'lowpass';
+      low.frequency.setValueAtTime(380, t0);
+      low.frequency.exponentialRampToValueAtTime(140, t0 + 0.55);
+      const wobble = ctx.createGain();
+      wobble.gain.value = 0.5;
+      const lfo = ctx.createOscillator();
+      lfo.frequency.value = 17;
+      const lfoGain = ctx.createGain();
+      lfoGain.gain.value = 0.5;
+      lfo.connect(lfoGain).connect(wobble.gain);
+      const burst = ctx.createGain();
+      burst.gain.setValueAtTime(0.0001, t0);
+      burst.gain.exponentialRampToValueAtTime(1, t0 + 0.04);
+      burst.gain.setValueAtTime(1, t0 + 0.45);
+      burst.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.6);
+      noise.connect(low).connect(wobble).connect(burst).connect(master);
+      for (const node of [noise, lfo]) {
+        node.start(t0);
+        node.stop(t0 + 0.65);
+        sources.push(node);
+      }
+      // 퐁당: 물에 떨어지는 소리 두 번
+      [0.62, 0.86].forEach((offset, i) => {
+        const osc = ctx.createOscillator();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(i === 0 ? 260 : 200, t0 + offset);
+        osc.frequency.exponentialRampToValueAtTime(70, t0 + offset + 0.2);
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0.0001, t0 + offset);
+        g.gain.exponentialRampToValueAtTime(i === 0 ? 0.9 : 0.6, t0 + offset + 0.012);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + offset + 0.26);
+        osc.connect(g).connect(master);
+        osc.start(t0 + offset);
+        osc.stop(t0 + offset + 0.3);
+        sources.push(osc);
+      });
     } else {
       duration = 0.9;
       master.gain.value = 1;
@@ -127,8 +170,10 @@ class SoundPlayer {
     }
 
     for (const source of sources) {
-      if (action !== 'knock') source.start(t0);
-      if (action !== 'knock') source.stop(t0 + duration + 0.05);
+      // 노크·똥은 소리별로 시작/정지 시각을 이미 예약해 두었다
+      if (action === 'knock' || action === 'poop') continue;
+      source.start(t0);
+      source.stop(t0 + duration + 0.05);
     }
 
     const handle: Playing = {

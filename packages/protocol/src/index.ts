@@ -1,7 +1,7 @@
 export const PROTOCOL_VERSION = 1;
 
-export type ActionType = 'fart' | 'flush' | 'knock';
-export const ACTIONS: readonly ActionType[] = ['fart', 'flush', 'knock'];
+export type ActionType = 'fart' | 'poop' | 'flush' | 'knock';
+export const ACTIONS: readonly ActionType[] = ['fart', 'poop', 'flush', 'knock'];
 
 export const DEFAULT_CONFIG = {
   nameMaxLength: 12,
@@ -9,7 +9,9 @@ export const DEFAULT_CONFIG = {
   heartbeatTimeoutMs: 30_000,
   gracePeriodMs: 30_000,
   priorityWindowMs: 10_000,
-  cooldownsMs: { fart: 3_000, flush: 5_000, knock: 3_000 } as Record<ActionType, number>,
+  chatMaxLength: 60,
+  chatCooldownMs: 1_000,
+  cooldownsMs: { fart: 3_000, poop: 4_000, flush: 5_000, knock: 3_000 } as Record<ActionType, number>,
 };
 export type Config = typeof DEFAULT_CONFIG;
 
@@ -64,6 +66,7 @@ export type ClientMessage =
   | { type: 'queue.join'; requestId: string; payload: Record<string, never> }
   | { type: 'queue.cancel'; requestId: string; payload: Record<string, never> }
   | { type: 'action.perform'; requestId: string; payload: { action: ActionType } }
+  | { type: 'chat.send'; requestId: string; payload: { text: string } }
   | { type: 'heartbeat.pong'; payload: { nonce: string } };
 
 export type ClientEnvelope = ClientMessage & { v: typeof PROTOCOL_VERSION };
@@ -94,6 +97,7 @@ export type ServerMessage =
       type: 'sound.play';
       payload: { eventId: string; actorId: string; action: ActionType; occurredAt: number };
     }
+  | { type: 'chat.message'; payload: { messageId: string; userId: string; text: string; at: number } }
   | { type: 'heartbeat.ping'; payload: { nonce: string } }
   | { type: 'session.replaced'; payload: { code: 'SESSION_REPLACED'; message: string } };
 

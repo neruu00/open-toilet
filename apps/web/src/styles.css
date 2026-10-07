@@ -614,3 +614,205 @@ p {
     width: 48px;
   }
 }
+
+/* ---------- 부스 이름표: 두 줄(이름 / 상태·타이머), 이름이 길어도 잘리지 않는다 ---------- */
+.tag-box {
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+}
+
+.tag {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  width: max-content;
+  max-width: none;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: nowrap;
+  border-radius: 14px;
+  padding: 4px 16px 5px;
+  font-size: inherit;
+  line-height: 1.2;
+}
+
+.tag-name {
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.tag-sub {
+  font-size: 14px;
+  font-weight: 600;
+  opacity: 0.9;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 말풍선 ---------- */
+.bubble-layer {
+  overflow: visible;
+  pointer-events: none;
+}
+
+.bubble-wrap {
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+}
+
+.bubble {
+  position: relative;
+  max-width: 100%;
+  background: #f8f9fa;
+  color: #111;
+  border-radius: 14px;
+  padding: 7px 12px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.5);
+  animation: bubble-pop 0.14s ease-out;
+}
+
+.bubble::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -7px;
+  transform: translateX(-50%);
+  border: 7px solid transparent;
+  border-bottom: 0;
+  border-top-color: #f8f9fa;
+}
+
+@keyframes bubble-pop {
+  from {
+    transform: scale(0.85);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bubble {
+    animation: none;
+  }
+}
+
+/* ---------- 채팅 입력 ---------- */
+.chat-form {
+  position: absolute;
+  z-index: 4;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  width: min(420px, calc(100vw - 360px));
+  display: flex;
+  gap: 8px;
+}
+
+.chat-form input {
+  flex: 1;
+  min-width: 0;
+  background: rgba(18, 22, 20, 0.92);
+  border: 1px solid #3a4640;
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 0 16px;
+  height: 46px;
+  font-size: 15px;
+}
+
+.chat-form input::placeholder {
+  color: var(--muted);
+}
+
+.chat-form input:focus-visible,
+.chat-send:focus-visible {
+  outline: 3px solid #69db7c;
+  outline-offset: 2px;
+}
+
+.chat-send {
+  width: 46px;
+  height: 46px;
+  flex: none;
+  border-radius: 50%;
+  border: 1px solid #2fb868;
+  background: var(--accent);
+  color: #fff;
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.chat-send:disabled,
+.chat-form input:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  /* 좁은 화면: 채팅창을 위쪽(제목 아래)으로 옮겨 하단 플로팅 버튼과 겹치지 않게 한다 */
+  .chat-form {
+    top: 52px;
+    bottom: auto;
+    width: calc(100vw - 32px);
+  }
+
+  .hud--lists {
+    top: auto;
+  }
+}
+
+/* ---------- 똥 파티클: 부스 중심에서 사방으로 퍼져 나가며 서서히 흐려진다 ---------- */
+.poop-particle {
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+  /* 이동은 빠르게 퍼졌다가 감속(ease-out), 투명도는 같은 시간 동안 일정하게 줄어든다 */
+  animation:
+    poop-spread 1.6s cubic-bezier(0.1, 0.65, 0.25, 1) both,
+    poop-fade 1.6s linear both;
+}
+
+@keyframes poop-spread {
+  from {
+    transform: translate(0, 0) scale(0.5);
+  }
+  to {
+    transform: translate(var(--dx), var(--dy)) scale(1.15);
+  }
+}
+
+@keyframes poop-fade {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .poop-burst {
+    display: none;
+  }
+}

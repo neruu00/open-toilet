@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useEffect, useState, useSyncExternalStore, type FormEvent } from 'react';
 import type { ActionType, Participant, Snapshot } from '@open-toilet/protocol';
 import { client, type ClientState } from './connection/client';
 import { NameScreen } from './components/NameScreen';
@@ -73,6 +73,7 @@ function Main({ state, snapshot, selfId }: { state: ClientState; snapshot: Snaps
   const showEnter = connected && !occupied && !reservedForOther;
   const showLeave = connected && inBooth;
   const showFart = connected && inBooth;
+  const showPoop = connected && inBooth;
   const showFlush = connected && inBooth;
   const showJoin = connected && occupied && !inBooth && !inQueue;
   const showCancel = connected && inQueue;
@@ -80,7 +81,7 @@ function Main({ state, snapshot, selfId }: { state: ClientState; snapshot: Snaps
 
   return (
     <main className="main">
-      <Scene snapshot={snapshot} selfId={selfId} serverNow={serverNow} />
+      <Scene snapshot={snapshot} selfId={selfId} serverNow={serverNow} bubbles={state.bubbles} effects={state.effects} />
 
       <header className="hud hud--top-left">
         <h1>
@@ -128,10 +129,15 @@ function Main({ state, snapshot, selfId }: { state: ClientState; snapshot: Snaps
         </div>
       )}
 
+      <ChatForm enabled={connected} maxLength={state.config?.chatMaxLength ?? 60} />
+
       {/* column-reverse: DOM 맨 앞이 화면 맨 아래 */}
       <nav className="fab-stack" aria-label="내 동작">
         {(showEnter || showLeave) && (
           <div className="fab-row">
+            {showPoop && (
+              <IconFab icon="💩" label="똥" leftMs={cooldown('poop')} onClick={() => void client.perform('poop')} />
+            )}
             {showFart && (
               <IconFab icon="💨" label="방귀" leftMs={cooldown('fart')} onClick={() => void client.perform('fart')} />
             )}
@@ -167,6 +173,43 @@ function Main({ state, snapshot, selfId }: { state: ClientState; snapshot: Snaps
         )}
       </nav>
     </main>
+  );
+}
+
+/** 채팅 입력: Enter로 보내면 내 머리 위에 말풍선이 뜬다. */
+function ChatForm({ enabled, maxLength }: { enabled: boolean; maxLength: number }) {
+  const [text, setText] = useState('');
+  const [sending, setSending] = useState(false);
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    const trimmed = text.trim();
+    if (!trimmed || sending || !enabled) return;
+    setSending(true);
+    const ok = await client.chat(trimmed);
+    setSending(false);
+    if (ok) setText(''); // 쿨다운 등으로 거절되면 입력한 내용을 남겨 둔다
+  };
+
+  return (
+    <form className="chat-form" onSubmit={(e) => void submit(e)}>
+      <label className="sr-only" htmlFor="chat-input">
+        채팅 메시지
+      </label>
+      <input
+        id="chat-input"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        maxLength={maxLength}
+        disabled={!enabled}
+        autoComplete="off"
+        placeholder="채팅 입력 후 Enter"
+        enterKeyHint="send"
+      />
+      <button type="submit" className="chat-send" disabled={!enabled || sending || text.trim() === ''} aria-label="보내기">
+        ➤
+      </button>
+    </form>
   );
 }
 

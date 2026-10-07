@@ -336,3 +336,76 @@ describe('접속 상태(presence)', () => {
     expect(s.participants.find((p) => p.userId === a.userId)?.status).toBe('connected');
   });
 });
+
+describe('채팅', () => {
+  it('본인 포함 전원에게 chat.message를 전달하고 앞뒤 공백은 제거한다', () => {
+    const a = join('a', 'A');
+    join('b', 'B');
+    raw('a', 'chat.send', { text: '  안녕하세요  ' });
+    for (const id of ['a', 'b']) {
+      const m = last(id, 'chat.message');
+      expect(m?.type === 'chat.message' && m.payload.text).toBe('안녕하세요');
+      expect(m?.type === 'chat.message' && m.payload.userId).toBe(a.userId);
+    }
+  });
+
+  it('빈 메시지, 60자 초과, 제어문자는 거절하고 브로드캐스트하지 않는다', () => {
+    join('a', 'A');
+    join('b', 'B');
+    for (const text of ['   ', '가'.repeat(61), 'a\nb']) {
+      raw('a', 'chat.send', { text });
+      expect(errCode('a')).toBe('BAD_REQUEST');
+    }
+    expect(last('b', 'chat.message')).toBeUndefined();
+  });
+
+  it('쿨다운 1초 안에는 거절, 지나면 다시 가능', () => {
+    join('a', 'A');
+    join('b', 'B');
+    raw('a', 'chat.send', { text: '하나' });
+    raw('a', 'chat.send', { text: '둘' });
+    expect(errCode('a')).toBe('COOLDOWN');
+    expect((sent.b ?? []).filter((m) => m.type === 'chat.message').length).toBe(1);
+    advance(1000);
+    pong('a');
+    pong('b');
+    raw('a', 'chat.send', { text: '셋' });
+    expect((sent.b ?? []).filter((m) => m.type === 'chat.message').length).toBe(2);
+  });
+
+  it('인증 전에는 채팅할 수 없다', () => {
+    engine.connect('x');
+    raw('x', 'chat.send', { text: 'hi' });
+    expect(errCode('x')).toBe('SESSION_REQUIRED');
+  });
+});
+
+describe('똥', () => {
+  it('부스 안에서만 가능하고, 전원에게 sound.play(poop)를 보내며 4초 쿨다운이 독립적으로 적용된다', () => {
+    join('a', 'A');
+    join('b', 'B');
+    raw('b', 'action.perform', { action: 'poop' });
+    expect(errCode('b')).toBe('NOT_IN_BOOTH');
+
+    raw('a', 'booth.enter');
+    raw('a', 'action.perform', { action: 'poop' });
+    for (const id of ['a', 'b']) {
+      const m = last(id, 'sound.play');
+      expect(m?.type === 'sound.play' && m.payload.action).toBe('poop');
+    }
+
+    advance(1000);
+    raw('a', 'action.perform', { action: 'poop' });
+    expect(errCode('a')).toBe('COOLDOWN');
+    expect(soundCount('b')).toBe(1);
+
+    raw('a', 'action.perform', { action: 'fart' }); // 다른 액션은 쿨다운이 따로다
+    expect(soundCount('b')).toBe(2);
+
+    advance(3100);
+    pong('a');
+    pong('b');
+    raw('a', 'action.perform', { action: 'poop' });
+    expect(soundCount('b')).toBe(3);
+  });
+});
