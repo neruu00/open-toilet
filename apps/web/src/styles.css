@@ -1172,10 +1172,18 @@ p {
   inset: 0;
 }
 
+/* 뒤(칸막이)와 앞(움직이는 것) 두 장을 같은 자리에 겹친다 */
 .fp-view {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   display: block;
+}
+
+/* 질감 필터가 무거운 배경은 따로 합성 레이어로 올려, 앞에서 연기·파티클이 움직여도 다시 그리지 않게 한다 */
+.fp-bg {
+  will-change: transform;
 }
 
 .fp-view * {
@@ -1187,10 +1195,9 @@ p {
   animation: scene-quake 0.4s linear 2;
 }
 
-.fp-graffiti text {
-  font-family: 'Comic Sans MS', 'Nanum Pen Script', cursive;
-  font-size: 22px;
-  fill: rgba(255, 255, 255, 0.5);
+/* 낙서 손글씨 */
+.fp-scrawl {
+  font-family: 'Nanum Pen Script', 'Comic Sans MS', cursive;
 }
 
 .fp-timer {
@@ -1198,6 +1205,106 @@ p {
   font-weight: 800;
   fill: #ffc9c9;
   font-variant-numeric: tabular-nums;
+}
+
+/* 형광등이 가끔 깜빡인다 */
+.fp-flicker {
+  opacity: 0;
+  animation: fp-flicker 9s steps(1) infinite;
+}
+
+@keyframes fp-flicker {
+  0%,
+  61%,
+  63.5%,
+  64.5%,
+  100% {
+    opacity: 0;
+  }
+  62% {
+    opacity: 0.32;
+  }
+  63% {
+    opacity: 0.12;
+  }
+  64% {
+    opacity: 0.4;
+  }
+}
+
+/* 거미가 실에 매달려 천천히 흔들린다 (실 끝을 축으로) */
+.fp-spider-swing {
+  transform-box: view-box;
+  transform-origin: 0 0;
+  animation: fp-spider 4.5s ease-in-out infinite alternate;
+}
+
+@keyframes fp-spider {
+  from {
+    transform: rotate(-7deg);
+  }
+  to {
+    transform: rotate(6deg) translateY(6px);
+  }
+}
+
+/* 닦기: 롤에서 휴지가 풀려 나오다 뜯기고, 손이 아래로 내려가 두 번 닦는다 */
+.fp-wipe-strip {
+  transform-origin: 50% 0%;
+  animation: fp-wipe-strip 2.6s ease-in-out both;
+}
+
+@keyframes fp-wipe-strip {
+  0%,
+  12% {
+    transform: scaleY(0);
+  }
+  32% {
+    transform: scaleY(1);
+  }
+  44% {
+    opacity: 1;
+    transform: scaleY(1.04);
+  }
+  52%,
+  100% {
+    opacity: 0;
+    transform: translate(-60px, 120px) scale(0.3) rotate(-30deg);
+  }
+}
+
+.fp-wipe-hand {
+  animation: fp-wipe-hand 2.6s ease-in-out both;
+}
+
+@keyframes fp-wipe-hand {
+  0% {
+    transform: translate(1080px, 860px);
+  }
+  15% {
+    transform: translate(966px, 490px);
+  }
+  32% {
+    transform: translate(966px, 600px);
+  }
+  44% {
+    transform: translate(980px, 608px) rotate(4deg);
+  }
+  58% {
+    transform: translate(560px, 650px);
+  }
+  66% {
+    transform: translate(560px, 770px);
+  }
+  74% {
+    transform: translate(560px, 650px);
+  }
+  82% {
+    transform: translate(560px, 770px);
+  }
+  100% {
+    transform: translate(1080px, 860px);
+  }
 }
 
 .fp-waiting {
@@ -1287,6 +1394,13 @@ p {
 /* 담배 */
 .fp-ember {
   fill: #ff6b35;
+  animation: fp-ember-idle 1.6s ease-in-out infinite alternate;
+}
+
+@keyframes fp-ember-idle {
+  to {
+    fill: #e8590c;
+  }
 }
 
 .fp-ember--hot {
@@ -2280,4 +2394,153 @@ p {
   stroke-width: 2;
   opacity: 0;
   animation: fp-rise 1.8s ease-out both;
+}
+
+/* ---------- 확률 변주: 기침·도넛 연기, 다 타서 아뜨뜨 ---------- */
+
+/* 바깥 화면: 환기구에서 떠오르는 도넛 연기 */
+.smoke-ring {
+  fill: none;
+  stroke: #dee2e6;
+  stroke-width: 3;
+  opacity: 0;
+  animation: smoke-ring 2.2s ease-out both;
+}
+
+@keyframes smoke-ring {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) scale(0.4);
+  }
+  15% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(18px, -110px) scale(2.6);
+  }
+}
+
+/* 1인칭: 입 앞에서 밀려나가며 커지는 도넛 연기 (멀어지듯 위로 올라간다) */
+.fp-smoke-ring {
+  opacity: 0;
+  animation: fp-smoke-ring 2.2s cubic-bezier(0.2, 0.6, 0.4, 1) both;
+}
+
+@keyframes fp-smoke-ring {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) scale(0.35);
+  }
+  12% {
+    opacity: 0.95;
+  }
+  70% {
+    opacity: 0.6;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(10px, -330px) scale(2.2, 1.9);
+  }
+}
+
+/* 1인칭: 기침할 때 터져 나오는 연기 (더 빠르고 짙다) */
+.fp-rise--cough {
+  fill: #ced4da;
+  animation-duration: 1.2s;
+}
+
+/* 기침: 화면이 콜록할 때마다 들썩인다 */
+.fp--cough {
+  animation: fp-cough 2.2s linear;
+}
+
+@keyframes fp-cough {
+  0%,
+  46%,
+  56%,
+  62%,
+  71%,
+  77%,
+  86%,
+  100% {
+    transform: translate(0, 0);
+  }
+  48% {
+    transform: translate(0, 10px) scale(1.01);
+  }
+  52% {
+    transform: translate(2px, -4px);
+  }
+  64% {
+    transform: translate(-2px, 9px) scale(1.01);
+  }
+  68% {
+    transform: translate(0, -3px);
+  }
+  79% {
+    transform: translate(1px, 8px) scale(1.01);
+  }
+  83% {
+    transform: translate(0, -3px);
+  }
+}
+
+.fp-sfx--cough {
+  fill: #e9ecef;
+  font-size: 48px;
+}
+
+/* 아뜨뜨: 손가락을 데어 화면이 빨갛게 번쩍하고 몸이 움찔한다 */
+.fp-tint--burn {
+  fill: #ff4d1a;
+  animation-duration: 0.9s;
+}
+
+.fp--jolt {
+  animation: fp-jolt 0.5s ease-out;
+}
+
+@keyframes fp-jolt {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  15% {
+    transform: translate(-8px, 4px) rotate(-0.6deg);
+  }
+  35% {
+    transform: translate(7px, -3px) rotate(0.5deg);
+  }
+  60% {
+    transform: translate(-3px, 2px);
+  }
+}
+
+.fp-ghost--burn {
+  animation: fp-ghost-burn 1.6s ease-out both;
+}
+
+@keyframes fp-ghost-burn {
+  0% {
+    transform: translate(0, 0) rotate(0deg);
+  }
+  8% {
+    transform: translate(10px, -6px) rotate(6deg);
+  }
+  16% {
+    transform: translate(-6px, 4px) rotate(-5deg);
+  }
+  26% {
+    transform: translate(40px, 30px) rotate(14deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(220px, 260px) rotate(24deg);
+  }
+}
+
+.fp-sfx--burn {
+  fill: #ff6b6b;
+  font-size: 64px;
 }

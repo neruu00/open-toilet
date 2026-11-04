@@ -11,7 +11,7 @@ export const SNUFF_ACTIONS: readonly SnuffAction[] = ['snuff_wall', 'snuff_toile
 export type SmokeAction = 'take' | 'light' | 'puff' | 'exhale' | 'ash' | SnuffAction;
 export const SMOKE_ACTIONS: readonly SmokeAction[] = ['take', 'light', 'puff', 'exhale', 'ash', ...SNUFF_ACTIONS];
 
-export type ActionType = 'fart' | 'poop' | 'flush' | 'bidet' | 'knock' | 'spit' | 'phlegm' | SmokeAction;
+export type ActionType = 'fart' | 'poop' | 'flush' | 'bidet' | 'knock' | 'spit' | 'phlegm' | 'wipe' | SmokeAction;
 export const ACTIONS: readonly ActionType[] = [
   'fart',
   'poop',
@@ -20,8 +20,22 @@ export const ACTIONS: readonly ActionType[] = [
   'knock',
   'spit',
   'phlegm',
+  'wipe',
   ...SMOKE_ACTIONS,
 ];
+
+/**
+ * sound.play로 알리는 일. 사용자가 요청하는 액션에 더해, 서버가 스스로 일으키는 일이 있다.
+ * - burnout: 담배를 끄지 않아 필터까지 다 타서 손가락을 데었다 ("아뜨뜨")
+ */
+export type SoundAction = ActionType | 'burnout';
+
+/**
+ * 같은 액션이라도 서버가 확률로 정하는 변주. 모두에게 같은 장면이 보이도록 서버가 고른다.
+ * - cough: 흡입하다 사레들려 기침한다
+ * - ring: 내뿜은 연기가 도넛 모양이 된다
+ */
+export type SoundVariant = 'cough' | 'ring';
 
 export const DEFAULT_CONFIG = {
   nameMaxLength: 12,
@@ -39,6 +53,7 @@ export const DEFAULT_CONFIG = {
     knock: 3_000,
     spit: 2_000,
     phlegm: 4_000,
+    wipe: 3_000,
     take: 2_000,
     light: 3_000,
     puff: 1_500,
@@ -52,6 +67,10 @@ export const DEFAULT_CONFIG = {
   cigaretteBurnMs: 120_000,
   /** 한 모금 빨 때마다 이만큼 더 탄다 */
   cigarettePuffBurnMs: 8_000,
+  /** 흡입하다 기침할 확률 */
+  coughChance: 0.25,
+  /** 내뿜은 연기가 도넛 모양이 될 확률 */
+  smokeRingChance: 0.35,
 };
 export type Config = typeof DEFAULT_CONFIG;
 
@@ -160,7 +179,7 @@ export type ServerMessage =
     }
   | {
       type: 'sound.play';
-      payload: { eventId: string; actorId: string; action: ActionType; occurredAt: number };
+      payload: { eventId: string; actorId: string; action: SoundAction; occurredAt: number; variant?: SoundVariant };
     }
   | { type: 'chat.message'; payload: { messageId: string; userId: string; text: string; at: number } }
   | { type: 'heartbeat.ping'; payload: { nonce: string } }

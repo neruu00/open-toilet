@@ -1,4 +1,4 @@
-import type { ActionType } from '@open-toilet/protocol';
+import type { SoundAction, SoundVariant } from '@open-toilet/protocol';
 
 // 음원 파일(라이선스 이슈) 없이 Web Audio로 효과음을 합성한다.
 // SPEC 8장의 /sounds/*.mp3 를 쓰고 싶다면 play()에서 파일 로드로 교체하면 된다.
@@ -42,11 +42,11 @@ class SoundPlayer {
     }
   }
 
-  play(action: ActionType): void {
+  play(action: SoundAction, variant?: SoundVariant): void {
     const ctx = this.ctx;
     if (this.muted || !ctx || ctx.state !== 'running') return;
     while (this.playing.length >= MAX_CONCURRENT) this.playing.shift()?.stop();
-    const handle = this.synth(ctx, action);
+    const handle = this.synth(ctx, action, variant);
     this.playing.push(handle);
   }
 
@@ -94,7 +94,27 @@ class SoundPlayer {
     sources.push(src);
   }
 
-  private synth(ctx: AudioContext, action: ActionType): Playing {
+  /** 콜록: 거친 숨이 터지고 가슴이 울리는 낮은 소리 */
+  private cough(ctx: AudioContext, out: AudioNode, sources: AudioScheduledSourceNode[], at: number): void {
+    const burst = ctx.createBufferSource();
+    burst.buffer = this.noise(ctx);
+    const band = ctx.createBiquadFilter();
+    band.type = 'bandpass';
+    band.frequency.setValueAtTime(700, at);
+    band.frequency.exponentialRampToValueAtTime(380, at + 0.16);
+    band.Q.value = 1.6;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, at);
+    g.gain.exponentialRampToValueAtTime(0.8, at + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + 0.2);
+    burst.connect(band).connect(g).connect(out);
+    burst.start(at);
+    burst.stop(at + 0.22);
+    sources.push(burst);
+    this.blip(ctx, out, sources, at, 150, 0.4);
+  }
+
+  private synth(ctx: AudioContext, action: SoundAction, variant?: SoundVariant): Playing {
     const t0 = ctx.currentTime;
     const master = ctx.createGain();
     master.connect(ctx.destination);
@@ -412,6 +432,45 @@ class SoundPlayer {
       sources.push(ptui);
       // 철퍽: 바닥에 떨어진다
       this.blip(ctx, master, sources, spitAt + (phlegm ? 0.45 : 0.3), phlegm ? 160 : 300, phlegm ? 0.7 : 0.35);
+    } else if (action === 'wipe') {
+      duration = 2.3;
+      master.gain.value = 0.7;
+      // 드르르륵: 롤이 헛돌며 휴지가 풀린다
+      for (let i = 0; i < 7; i++) this.scrape(ctx, master, sources, t0 + 0.08 + i * 0.05);
+      // 부욱: 절취선을 따라 뜯는다
+      const tear = ctx.createBufferSource();
+      tear.buffer = this.noise(ctx);
+      const tearBand = ctx.createBiquadFilter();
+      tearBand.type = 'bandpass';
+      tearBand.Q.value = 1.4;
+      tearBand.frequency.setValueAtTime(1200, t0 + 0.45);
+      tearBand.frequency.exponentialRampToValueAtTime(3800, t0 + 0.6);
+      const tearGain = ctx.createGain();
+      tearGain.gain.setValueAtTime(0.0001, t0 + 0.45);
+      tearGain.gain.exponentialRampToValueAtTime(0.7, t0 + 0.47);
+      tearGain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.62);
+      tear.connect(tearBand).connect(tearGain).connect(master);
+      tear.start(t0 + 0.45);
+      tear.stop(t0 + 0.65);
+      sources.push(tear);
+      // 쓱싹 쓱싹: 종이가 스치는 소리 두 번
+      [1.0, 1.35, 1.65, 2.0].forEach((at) => {
+        const swish = ctx.createBufferSource();
+        swish.buffer = this.noise(ctx);
+        const band = ctx.createBiquadFilter();
+        band.type = 'bandpass';
+        band.Q.value = 0.9;
+        band.frequency.setValueAtTime(2600, t0 + at);
+        band.frequency.exponentialRampToValueAtTime(1100, t0 + at + 0.2);
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0.0001, t0 + at);
+        g.gain.exponentialRampToValueAtTime(0.35, t0 + at + 0.05);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + at + 0.22);
+        swish.connect(band).connect(g).connect(master);
+        swish.start(t0 + at);
+        swish.stop(t0 + at + 0.25);
+        sources.push(swish);
+      });
     } else if (action === 'ash') {
       duration = 0.5;
       master.gain.value = 0.6;
@@ -428,6 +487,38 @@ class SoundPlayer {
         osc.connect(g).connect(master);
         osc.start(t0 + offset);
         osc.stop(t0 + offset + 0.09);
+        sources.push(osc);
+      });
+    } else if (action === 'burnout') {
+      duration = 1.1;
+      master.gain.value = 0.9;
+      // 치익: 다 탄 필터가 손가락에 닿아 지글거린다
+      const hiss = ctx.createBufferSource();
+      hiss.buffer = this.noise(ctx);
+      const hp = ctx.createBiquadFilter();
+      hp.type = 'highpass';
+      hp.frequency.value = 4500;
+      const hg = ctx.createGain();
+      hg.gain.setValueAtTime(0.0001, t0);
+      hg.gain.exponentialRampToValueAtTime(0.5, t0 + 0.02);
+      hg.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.4);
+      hiss.connect(hp).connect(hg).connect(master);
+      hiss.start(t0);
+      hiss.stop(t0 + 0.45);
+      sources.push(hiss);
+      // 아뜨뜨: 짧게 올라갔다 떨어지는 소리 세 번
+      [0.12, 0.34, 0.5].forEach((at, i) => {
+        const osc = ctx.createOscillator();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(i === 0 ? 900 : 780, t0 + at);
+        osc.frequency.exponentialRampToValueAtTime(480, t0 + at + 0.14);
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0.0001, t0 + at);
+        g.gain.exponentialRampToValueAtTime(0.35, t0 + at + 0.015);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + at + 0.16);
+        osc.connect(g).connect(master);
+        osc.start(t0 + at);
+        osc.stop(t0 + at + 0.18);
         sources.push(osc);
       });
     } else {
@@ -448,6 +539,16 @@ class SoundPlayer {
         osc.stop(t0 + offset + 0.2);
         sources.push(osc);
       });
+    }
+
+    if (variant === 'cough') {
+      // 콜록콜록: 들이마신 뒤 사레들려 연달아 기침한다
+      duration = Math.max(duration, 2.2);
+      [1.05, 1.4, 1.72].forEach((at) => this.cough(ctx, master, sources, t0 + at));
+    } else if (variant === 'ring') {
+      // 포, 포: 입을 오므려 도넛 연기를 밀어낸다
+      duration = Math.max(duration, 1.4);
+      [0.2, 0.62].forEach((at) => this.blip(ctx, master, sources, t0 + at, 220, 0.3));
     }
 
     for (const source of sources) {

@@ -16,6 +16,8 @@ import {
   type ServerEnvelope,
   type ServerMessage,
   type Snapshot,
+  type SoundAction,
+  type SoundVariant,
 } from '@open-toilet/protocol';
 
 export interface Outbox {
@@ -27,6 +29,8 @@ export interface EngineOptions {
   now: () => number;
   out: Outbox;
   config?: Partial<Config>;
+  /** 0 이상 1 미만 난수. 기침·도넛 연기 확률에 쓴다 (테스트에서 고정값을 넣는다) */
+  random?: () => number;
 }
 
 interface Session {
@@ -103,6 +107,7 @@ export class Engine {
 
   private readonly now: () => number;
   private readonly out: Outbox;
+  private readonly random: () => number;
 
   private conns = new Map<string, Conn>();
   private sessions = new Map<string, Session>();
@@ -117,6 +122,7 @@ export class Engine {
   constructor(options: EngineOptions) {
     this.now = options.now;
     this.out = options.out;
+    this.random = options.random ?? Math.random;
     this.config = { ...DEFAULT_CONFIG, ...options.config };
   }
 
@@ -250,7 +256,8 @@ export class Engine {
     }
 
     if (this.cigarette && this.burnedOut(this.cigarette, now)) {
-      this.cigarette = null; // 다 타서 꺼짐
+      this.cigarette = null; // 끄지 않고 두어 필터까지 다 탔다: 손가락을 덴다
+      if (this.occupantId) this.broadcastSound(this.occupantId, 'burnout', now);
       changed = true;
     }
 
@@ -521,14 +528,28 @@ export class Engine {
     const nextUntil = now + this.config.cooldownsMs[type];
     session.cooldownUntil[type] = nextUntil;
 
+    const hadCigarette = this.cigarette !== null;
     if (this.updateCigarette(type, now)) this.commit();
     this.ok(conn, requestId, 'action.perform', { cooldownUntil: { [type]: nextUntil } });
+    this.broadcastSound(session.userId, type, now, this.pickVariant(type));
+    // 빨다가 필터까지 다 태우면 손가락을 덴다
+    if (type === 'puff' && hadCigarette && !this.cigarette) this.broadcastSound(session.userId, 'burnout', now);
+  }
+
+  /** 기침·도넛 연기처럼 확률로 생기는 변주를 서버가 정한다 (모두에게 같은 장면이 보이게) */
+  private pickVariant(type: ActionType): SoundVariant | undefined {
+    if (type === 'puff' && this.random() < this.config.coughChance) return 'cough';
+    if (type === 'exhale' && this.random() < this.config.smokeRingChance) return 'ring';
+    return undefined;
+  }
+
+  private broadcastSound(actorId: string, action: SoundAction, now: number, variant?: SoundVariant): void {
     const eventId = `snd_${randomBytes(6).toString('hex')}`;
     for (const target of this.sessions.values()) {
       if (target.connId) {
         this.send(target.connId, {
           type: 'sound.play',
-          payload: { eventId, actorId: session.userId, action: type, occurredAt: now },
+          payload: { eventId, actorId, action, occurredAt: now, ...(variant ? { variant } : {}) },
         });
       }
     }

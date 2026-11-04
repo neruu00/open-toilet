@@ -1,6 +1,25 @@
 import type { CSSProperties } from 'react';
 import { DEFAULT_CONFIG, cigaretteBurnedMs, type Cigarette, type Config, type Snapshot } from '@open-toilet/protocol';
 import type { Effect } from '../connection/client';
+import {
+  ASH_MAX,
+  CIG_ANGLE,
+  DOOR,
+  FILTER,
+  FLOOR_Y,
+  ForegroundDefs,
+  Fluorescent,
+  HAND_X,
+  HAND_Y,
+  HandArt,
+  Legs,
+  ROLL_SPOT,
+  Spider,
+  StallBackdrop,
+  TOBACCO,
+  seededRandom,
+  type CigaretteShape,
+} from './FirstPersonArt';
 
 interface FirstPersonProps {
   snapshot: Snapshot;
@@ -12,24 +31,6 @@ interface FirstPersonProps {
   config: Config | null;
 }
 
-const DOOR_GREEN = '#2f9373';
-const SELF = '#ffa94d';
-const SELF_SHADE = '#e8913a';
-
-// 문 위치 (viewBox 1000 x 700)
-const DOOR = { x: 330, y: 100, w: 340, h: 486 };
-const FLOOR_Y = 600;
-
-// 담배를 든 손의 위치와 담배 기울기 (오른쪽 아래 버튼들에 가리지 않게 무릎 위쪽에 둔다)
-const HAND_X = 660;
-const HAND_Y = 520;
-const CIG_ANGLE = 25;
-const FILTER = 34;
-/** 필터를 뺀 담뱃잎 부분의 길이 */
-const TOBACCO = 96;
-/** 재는 이 길이 넘게는 매달리지 않는다 (그 이상은 처진다) */
-const ASH_MAX = 34;
-
 // 끄기 연출이 향하는 곳
 const WALL_SPOT = { x: 140, y: 400 };
 const FLOOR_SPOT = { x: 110, y: 660 };
@@ -37,29 +38,6 @@ const FLOOR_SPOT = { x: 110, y: 660 };
 function formatElapsed(ms: number): string {
   const total = Math.max(0, Math.floor(ms / 1000));
   return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
-}
-
-/** 효과 id로 항상 같은 난수열을 만든다 (Scene과 같은 방식) */
-function seededRandom(seed: string): () => number {
-  let h = 1779033703 ^ seed.length;
-  for (let i = 0; i < seed.length; i++) {
-    h = Math.imul(h ^ seed.charCodeAt(i), 3432918353);
-    h = (h << 13) | (h >>> 19);
-  }
-  return () => {
-    h = Math.imul(h ^ (h >>> 16), 2246822507);
-    h = Math.imul(h ^ (h >>> 13), 3266489909);
-    h ^= h >>> 16;
-    return (h >>> 0) / 4294967296;
-  };
-}
-
-interface CigaretteShape {
-  lit: boolean;
-  /** 아직 타지 않은 종이 부분 길이 */
-  paper: number;
-  /** 끝에 매달린 재 길이 */
-  ash: number;
 }
 
 /** 서버가 준 담배 상태와 현재 시각으로 화면에 그릴 길이를 정한다 */
@@ -79,140 +57,22 @@ function alongCigarette(distance: number): { x: number; y: number } {
   return { x: HAND_X - distance * Math.cos(rad), y: HAND_Y - 18 - distance * Math.sin(rad) };
 }
 
-/** 칸막이 안쪽: 천장·양옆 벽·바닥과 정면의 닫힌 문 */
-function Stall({ occupiedLabel, waiting, knocking }: { occupiedLabel: string; waiting: number; knocking: boolean }) {
+/** 문 아래 틈(밖의 빛과 줄 선 사람 발 그림자)과 잠금장치 아래 타이머. 바뀌는 부분이라 앞쪽 레이어에 그린다 */
+function DoorOverlay({ occupiedLabel, waiting, knocking }: { occupiedLabel: string; waiting: number; knocking: boolean }) {
   const feet = Array.from({ length: Math.min(3, waiting) }, (_, i) => DOOR.x + 70 + i * 100);
+  const gapY = DOOR.y + DOOR.h;
   return (
     <g>
-      {/* 천장과 조명 */}
-      <polygon points="0,0 1000,0 800,70 200,70" fill="#0d2a20" />
-      <ellipse cx="500" cy="30" rx="70" ry="14" fill="#fff4c2" opacity="0.85" />
-      <ellipse cx="500" cy="30" rx="140" ry="40" fill="#fff4c2" opacity="0.08" />
-
-      {/* 양옆 벽 */}
-      <polygon points="0,0 200,70 200,600 0,700" fill="#14402f" />
-      <polygon points="1000,0 800,70 800,600 1000,700" fill="#14402f" />
-      <polygon points="0,0 200,70 200,600 0,700" fill="#000" opacity="0.18" />
-
-      {/* 바닥 타일 */}
-      <polygon points="0,700 200,600 800,600 1000,700" fill="#1f2b26" />
-      {[1, 2, 3].map((i) => (
-        <line key={`h${i}`} x1={200 - i * 66} y1={600 + i * 33} x2={800 + i * 66} y2={600 + i * 33} stroke="#2c3a34" strokeWidth="2" />
-      ))}
-      {[-3, -2, -1, 0, 1, 2, 3].map((i) => (
-        <line key={`v${i}`} x1={500 + i * 100} y1="600" x2={500 + i * 167} y2="700" stroke="#2c3a34" strokeWidth="2" />
-      ))}
-
-      {/* 뒷벽 */}
-      <rect x="200" y="70" width="600" height="530" fill="#1a5240" />
-
-      {/* 왼쪽 벽: 금연 표지판 */}
-      <g transform="translate(105 270) skewY(16)">
-        <rect x="-46" y="-52" width="92" height="104" rx="6" fill="#f8f9fa" />
-        <text y="-6" textAnchor="middle" fontSize="40">
-          🚭
-        </text>
-        <text y="38" textAnchor="middle" fontSize="20" fontWeight="800" fill="#c92a2a">
-          금연
-        </text>
-      </g>
-
-      {/* 오른쪽 벽: 휴지걸이 */}
-      <g transform="translate(895 430) skewY(-16)">
-        <rect x="-40" y="-26" width="80" height="12" rx="4" fill="#adb5bd" />
-        <rect x="-32" y="-16" width="64" height="46" rx="10" fill="#f8f9fa" />
-        <rect x="-32" y="22" width="22" height="40" fill="#f1f3f5" />
-      </g>
-
-      {/* 문 */}
-      <g className={knocking ? 'fp-door fp-door--knock' : 'fp-door'}>
-        <rect x={DOOR.x - 10} y={DOOR.y - 10} width={DOOR.w + 20} height={DOOR.h + 10} fill="#cfd5d2" />
-        <rect x={DOOR.x} y={DOOR.y} width={DOOR.w} height={DOOR.h} fill={DOOR_GREEN} />
-        <rect x={DOOR.x + 18} y={DOOR.y + 18} width={DOOR.w - 36} height={DOOR.h - 36} fill="none" stroke="#5fb99b" strokeWidth="2" />
-        {/* 옷걸이 */}
-        <path d="M500 128 v14 q0 14 -14 14" fill="none" stroke="#cfd5d2" strokeWidth="5" strokeLinecap="round" />
-        <circle cx="500" cy="126" r="6" fill="#cfd5d2" />
-        {/* 잠금장치: 안에서 보면 빨간 '사용중' */}
-        <rect x={DOOR.x + DOOR.w - 72} y="318" width="52" height="34" rx="6" fill="#cfd5d2" />
-        <rect x={DOOR.x + DOOR.w - 66} y="324" width="40" height="22" rx="3" fill="#e03131" />
-        <text x={DOOR.x + DOOR.w - 46} y="340" textAnchor="middle" fontSize="11" fontWeight="800" fill="#fff">
-          사용중
-        </text>
-        {/* 낙서 */}
-        <g className="fp-graffiti">
-          <text x="372" y="230" transform="rotate(-6 372 230)">
-            여기 다녀감 ✌
-          </text>
-          <text x="520" y="430" transform="rotate(4 520 430)">
-            휴지 확인하고 앉기
-          </text>
-          <text x="380" y="520" transform="rotate(-3 380 520)">
-            ♡ 똥은 인생 ♡
-          </text>
-        </g>
-        {/* 잠금장치 아래 타이머 (화면 위쪽은 채팅창에 가려질 수 있다) */}
-        <text className="fp-timer" x={DOOR.x + DOOR.w - 46} y="374" textAnchor="middle">
-          {occupiedLabel}
-        </text>
-      </g>
-
-      {/* 문 아래 틈: 밖의 빛, 줄 선 사람의 발 그림자 */}
-      <rect x={DOOR.x} y={DOOR.y + DOOR.h} width={DOOR.w} height={FLOOR_Y - DOOR.y - DOOR.h} fill="#e9f5ee" opacity="0.55" />
+      <rect x={DOOR.x} y={gapY} width={DOOR.w} height={FLOOR_Y - gapY} fill="#f1f7e8" opacity="0.5" />
       {feet.map((x) => (
-        <g key={x} fill="#0b0f0d">
-          <rect x={x - 26} y={DOOR.y + DOOR.h + 2} width="22" height="12" rx="5" />
-          <rect x={x + 4} y={DOOR.y + DOOR.h + 2} width="22" height="12" rx="5" />
+        <g key={x} fill="#050706" opacity="0.85">
+          <path d={`M${x - 28} ${gapY + 14} q2 -12 12 -12 l10 0 q4 0 4 12 Z`} />
+          <path d={`M${x + 2} ${gapY + 14} q2 -12 12 -12 l10 0 q4 0 4 12 Z`} />
         </g>
       ))}
-    </g>
-  );
-}
-
-/** 내려다보이는 내 무릎 (나 캐릭터와 같은 주황색 픽토그램) */
-function Legs({ shake }: { shake: boolean }) {
-  return (
-    <g className={shake ? 'fp-legs fp-legs--shake' : 'fp-legs'}>
-      {/* 발목에 걸친 바지 */}
-      <rect x="300" y="586" width="150" height="34" rx="14" fill="#343a40" />
-      <rect x="550" y="586" width="150" height="34" rx="14" fill="#343a40" />
-      {/* 허벅지 */}
-      <path d="M150 700 L 330 640 Q 395 590 460 640 L 490 700 Z" fill={SELF} />
-      <path d="M850 700 L 670 640 Q 605 590 540 640 L 510 700 Z" fill={SELF} />
-      {/* 무릎 */}
-      <ellipse cx="395" cy="638" rx="70" ry="44" fill={SELF} />
-      <ellipse cx="605" cy="638" rx="70" ry="44" fill={SELF} />
-      <ellipse cx="395" cy="628" rx="40" ry="16" fill="#ffc078" opacity="0.6" />
-      <ellipse cx="605" cy="628" rx="40" ry="16" fill="#ffc078" opacity="0.6" />
-    </g>
-  );
-}
-
-/** 손에 든 담배: 필터 → 남은 종이 → 불씨 → 매달린 재 */
-function CigaretteBody({ shape, inhaling }: { shape: CigaretteShape; inhaling: boolean }) {
-  const tip = -FILTER - shape.paper;
-  // 재가 길어지면 무게 때문에 아래로 처진다
-  const droop = Math.max(0, shape.ash - 18) * 0.5;
-  return (
-    <g>
-      <rect x={-FILTER} y="-6" width={FILTER} height="12" rx="2" fill="#e8913a" />
-      <rect x={-FILTER + 4} y="-6" width="2" height="12" fill="#d9480f" opacity="0.5" />
-      <rect x={tip} y="-6" width={shape.paper} height="12" fill="#f8f9fa" />
-      {shape.lit && shape.ash > 0 && (
-        <g transform={`translate(${tip} 0) rotate(${-droop})`}>
-          <rect x={-shape.ash} y="-5.5" width={shape.ash} height="11" rx="2" fill="#adb5bd" />
-          <rect x={-shape.ash} y="-5.5" width={shape.ash} height="11" rx="2" fill="url(#fp-ash-grain)" />
-        </g>
-      )}
-      {shape.lit && (
-        <rect
-          className={inhaling ? 'fp-ember fp-ember--hot' : 'fp-ember'}
-          x={tip - 3}
-          y="-6"
-          width="6"
-          height="12"
-          rx="2"
-        />
-      )}
+      <text className={knocking ? 'fp-timer fp-door--knock' : 'fp-timer'} x={DOOR.x + DOOR.w - 45} y="372" textAnchor="middle">
+        {occupiedLabel}
+      </text>
     </g>
   );
 }
@@ -228,15 +88,9 @@ function Hand({
   motion: 'puff' | 'ash' | 'take' | null;
 }) {
   return (
-    <g className={motion ? `fp-hand fp-hand--${motion}` : 'fp-hand'}>
-      <g transform={`translate(${HAND_X} ${HAND_Y})`}>
-        <g transform={`translate(0 -18) rotate(${CIG_ANGLE})`}>
-          <CigaretteBody shape={shape} inhaling={inhaling} />
-        </g>
-        {/* 주먹과 엄지 */}
-        <rect x="-36" y="-34" width="84" height="76" rx="30" fill={SELF} />
-        <rect x="-44" y="-26" width="40" height="22" rx="11" fill={SELF_SHADE} />
-        <path d="M-20 4 h40 M-16 20 h36" stroke={SELF_SHADE} strokeWidth="4" strokeLinecap="round" />
+    <g className={motion ? `fp-hand fp-hand--${motion}` : 'fp-hand'} filter="url(#fp-soft-shadow)">
+      <g transform={`translate(${HAND_X} ${HAND_Y - 18}) rotate(${CIG_ANGLE})`}>
+        <HandArt shape={shape} inhaling={inhaling} />
       </g>
     </g>
   );
@@ -273,28 +127,32 @@ function burst(rand: () => number, count: number, className: string, spread: num
 }
 
 /** 끄는 동안만 보이는 손과 담배. 상태에서는 이미 꺼졌으므로 효과가 따로 그린다 */
-function GhostHand({ className, style }: { className: string; style?: CSSProperties }) {
+function GhostHand({ className, style, stub = false }: { className: string; style?: CSSProperties; stub?: boolean }) {
+  // stub: 필터까지 다 타서 종이가 거의 남지 않은 담배
+  const shape = stub ? { lit: true, paper: 2, ash: 0 } : { lit: true, paper: 40, ash: 0 };
   return (
     <g transform={`translate(${HAND_X} ${HAND_Y})`}>
       <g className={className} style={style}>
         <g transform={`translate(0 -18) rotate(${CIG_ANGLE})`}>
-          <CigaretteBody shape={{ lit: true, paper: 40, ash: 0 }} inhaling={false} />
+          <HandArt shape={shape} inhaling={stub} />
         </g>
-        <rect x="-36" y="-34" width="84" height="76" rx="30" fill={SELF} />
-        <rect x="-44" y="-26" width="40" height="22" rx="11" fill={SELF_SHADE} />
       </g>
     </g>
   );
 }
 
 /** 손에서 떨어지는 꽁초 */
-function FallingButt({ to }: { to: { x: number; y: number } }) {
+function FallingButt({ to, delay = 0 }: { to: { x: number; y: number }; delay?: number }) {
   const from = alongCigarette(FILTER + 20);
   return (
     <g transform={`translate(${from.x} ${from.y})`}>
-      <g className="fp-butt-fall" style={{ '--dx': `${to.x - from.x}px`, '--dy': `${to.y - from.y}px` } as CSSProperties}>
-        <rect x="-18" y="-5" width="16" height="10" rx="2" fill="#e8913a" />
-        <rect x="-2" y="-5" width="20" height="10" fill="#f8f9fa" />
+      <g
+        className="fp-butt-fall"
+        style={{ '--dx': `${to.x - from.x}px`, '--dy': `${to.y - from.y}px`, animationDelay: `${delay}s` } as CSSProperties}
+      >
+        <rect x="-18" y="-5" width="16" height="10" rx="1.5" fill="url(#fp-cork)" />
+        <rect x="-2" y="-5" width="20" height="10" fill="#f6f3ec" />
+        <rect x="-18" y="-5" width="39" height="10" fill="url(#fp-cyl)" />
         <rect x="16" y="-5" width="5" height="10" rx="2" fill="#ff6b35" />
       </g>
     </g>
@@ -306,8 +164,9 @@ function CigarettePack() {
   return (
     <g transform={`translate(${HAND_X + 20} ${HAND_Y + 40})`} aria-hidden="true">
       <g className="fp-pack">
-        <rect x="-36" y="-60" width="72" height="110" rx="5" fill="#f8f9fa" />
-        <rect x="-36" y="-10" width="72" height="44" fill="#c92a2a" />
+        <rect x="-36" y="-60" width="72" height="110" rx="5" fill="url(#fp-paper)" />
+        <rect x="-36" y="-10" width="72" height="44" fill="#b3201f" />
+        <rect x="-36" y="-60" width="10" height="110" fill="#000" opacity="0.12" />
         <text y="18" textAnchor="middle" fontSize="13" fontWeight="900" fill="#fff">
           TOILET
         </text>
@@ -316,10 +175,12 @@ function CigarettePack() {
         </text>
         {/* 갑 속 담배 필터들 */}
         {[-22, -8, 6, 20].map((x) => (
-          <rect key={x} x={x - 6} y="-66" width="12" height="10" rx="2" fill="#e8913a" />
+          <rect key={x} x={x - 6} y="-66" width="12" height="10" rx="2" fill="url(#fp-cork)" />
         ))}
-        <rect className="fp-pack-pull" x="-6" y="-66" width="12" height="60" rx="2" fill="#f8f9fa" />
-        <rect className="fp-pack-lid" x="-36" y="-80" width="72" height="22" rx="4" fill="#f1f3f5" stroke="#dee2e6" />
+        {/* 은박지 */}
+        <path d="M-34 -60 l6 -6 l8 4 l8 -5 l8 4 l8 -5 l8 4 l8 -4 l8 5 L34 -60 Z" fill="url(#fp-metal)" opacity="0.8" />
+        <rect className="fp-pack-pull" x="-6" y="-66" width="12" height="60" rx="2" fill="#f6f3ec" />
+        <rect className="fp-pack-lid" x="-36" y="-80" width="72" height="22" rx="4" fill="url(#fp-paper)" stroke="#c9c4b6" />
       </g>
     </g>
   );
@@ -440,13 +301,33 @@ function FpEffect({ effect, ember }: { effect: Effect; ember: { x: number; y: nu
         <g aria-hidden="true">
           <rect className="fp-tint fp-tint--puff" width="1000" height="700" />
           <Sfx text="스으읍…" y={250} tone="smoke" />
+          {effect.variant === 'cough' && (
+            <>
+              {/* 사레들려 연기가 콜록콜록 터져 나온다 */}
+              <g filter="url(#fp-blur)">
+                {[1.05, 1.4, 1.72].flatMap((at, k) =>
+                  Array.from({ length: 5 }, (_, i) => (
+                    <circle
+                      key={`${k}-${i}`}
+                      className="fp-rise fp-rise--cough"
+                      cx={500 + (rand() - 0.5) * 60}
+                      cy={720}
+                      r={24 + rand() * 30}
+                      style={{ '--dx': `${(rand() - 0.5) * 420}px`, '--dy': `${-(160 + rand() * 200)}px`, animationDelay: `${at + i * 0.03}s` } as CSSProperties}
+                    />
+                  )),
+                )}
+              </g>
+              <Sfx text="콜록! 콜록!!" y={300} tone="cough" delay={1.05} />
+            </>
+          )}
         </g>
       );
     case 'exhale':
       return (
         <g aria-hidden="true">
           <g filter="url(#fp-blur)">
-            {Array.from({ length: 16 }, (_, i) => (
+            {Array.from({ length: effect.variant === 'ring' ? 6 : 16 }, (_, i) => (
               <circle
                 key={i}
                 className="fp-rise fp-rise--smoke"
@@ -457,7 +338,35 @@ function FpEffect({ effect, ember }: { effect: Effect; ember: { x: number; y: nu
               />
             ))}
           </g>
-          <Sfx text="후우우~" y={280} tone="smoke" />
+          {effect.variant === 'ring' ? (
+            <>
+              {/* 입 앞에서 도넛 연기가 하나씩 밀려나가며 커진다 */}
+              {[0.15, 0.6, 1.05].map((at, i) => (
+                <g key={i} transform={`translate(${500 + (i - 1) * 18} 640)`}>
+                  <g className="fp-smoke-ring" style={{ animationDelay: `${at}s` }}>
+                    <ellipse rx="46" ry="20" fill="none" stroke="#f1f3f5" strokeWidth="13" opacity="0.7" filter="url(#fp-ring-blur)" />
+                    <ellipse rx="46" ry="20" fill="none" stroke="#fff" strokeWidth="3" opacity="0.45" />
+                  </g>
+                </g>
+              ))}
+              <Sfx text="도나쓰~ ○ ○ ○" y={250} tone="smoke" delay={0.2} />
+            </>
+          ) : (
+            <Sfx text="후우우~" y={280} tone="smoke" />
+          )}
+        </g>
+      );
+    case 'burnout':
+      // 다 탄 필터가 손가락에 닿아 화들짝 놀라 꽁초를 떨어뜨린다
+      return (
+        <g aria-hidden="true">
+          <rect className="fp-tint fp-tint--burn" width="1000" height="700" />
+          <GhostHand className="fp-ghost fp-ghost--burn" stub />
+          <FallingButt to={{ x: 560, y: 690 }} delay={0.35} />
+          <g transform={`translate(${alongCigarette(FILTER + 2).x} ${alongCigarette(FILTER + 2).y})`}>
+            {burst(rand, 12, 'fp-spark', 90)}
+          </g>
+          <Sfx text="아뜨뜨!!" y={330} tone="burn" />
         </g>
       );
     case 'ash':
@@ -556,6 +465,29 @@ function FpEffect({ effect, ember }: { effect: Effect; ember: { x: number; y: nu
             <circle className="fp-phlegm-fly" r="14" fill="#a9c23f" style={{ '--dx': '-30px', '--dy': '-320px' } as CSSProperties} />
           </g>
           <Sfx text="퉷!" y={520} tone="gas" delay={1.05} />
+        </g>
+      );
+    case 'wipe':
+      return (
+        <g aria-hidden="true">
+          {/* 롤에서 휴지가 풀려 나오다가 '부욱' 뜯긴다 */}
+          <g transform={`translate(${ROLL_SPOT.x} ${ROLL_SPOT.y})`}>
+            <g className="fp-wipe-strip">
+              <rect x="-13" y="0" width="26" height="112" fill="url(#fp-paper)" />
+              <line x1="-13" y1="37" x2="13" y2="37" stroke="#c9c4b6" strokeWidth="1" strokeDasharray="2 2" />
+              <line x1="-13" y1="74" x2="13" y2="74" stroke="#c9c4b6" strokeWidth="1" strokeDasharray="2 2" />
+              <path d="M-13 112 l4 -3 l4 3 l4 -3 l4 3 l4 -3 l4 3 l3 -2" stroke="#c9c4b6" fill="none" />
+            </g>
+          </g>
+          {/* 휴지를 쥔 손: 롤로 갔다가 아래로 내려가 두 번 닦고 빠진다 */}
+          <g className="fp-wipe-hand" filter="url(#fp-soft-shadow)">
+            <g transform={`rotate(${CIG_ANGLE})`}>
+              <HandArt shape={null} inhaling={false} holdingPaper />
+            </g>
+          </g>
+          <Sfx text="드르르륵…" x={ROLL_SPOT.x - 110} y={ROLL_SPOT.y - 70} tone="smoke" />
+          <Sfx text="부욱!" x={ROLL_SPOT.x - 90} y={ROLL_SPOT.y + 20} tone="knock" delay={0.45} />
+          <Sfx text="쓱싹 쓱싹" y={560} tone="smoke" delay={1.05} />
         </g>
       );
     default:
@@ -730,7 +662,16 @@ export function FirstPerson({ snapshot, selfId, serverNow, bubbles, effects, con
   const smoking = !cigarette ? '' : cigarette.litAt === null ? '. 담배를 들고 있음' : '. 담배 피우는 중';
 
   return (
-    <div className={has('poop') ? 'fp fp--quake' : 'fp'}>
+    <div
+      className={['fp', has('poop') && 'fp--quake', effects.some((e) => e.variant === 'cough') && 'fp--cough', has('burnout') && 'fp--jolt']
+        .filter(Boolean)
+        .join(' ')}
+    >
+      {/* 뒤 레이어: 질감 필터가 많은 칸막이. 노크 말고는 바뀌지 않아 한 번 그린 뒤 그대로 쓴다 */}
+      <svg className="fp-view fp-bg" viewBox="0 0 1000 700" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+        <StallBackdrop knocking={has('knock')} />
+      </svg>
+      {/* 앞 레이어: 움직이는 것들 */}
       <svg
         className="fp-view"
         viewBox="0 0 1000 700"
@@ -743,16 +684,14 @@ export function FirstPerson({ snapshot, selfId, serverNow, bubbles, effects, con
             <feGaussianBlur stdDeviation="6" />
           </filter>
           <radialGradient id="fp-vignette" cx="50%" cy="45%" r="75%">
-            <stop offset="60%" stopColor="#000" stopOpacity="0" />
-            <stop offset="100%" stopColor="#000" stopOpacity="0.65" />
+            <stop offset="55%" stopColor="#000" stopOpacity="0" />
+            <stop offset="100%" stopColor="#000" stopOpacity="0.75" />
           </radialGradient>
-          <pattern id="fp-ash-grain" width="6" height="6" patternUnits="userSpaceOnUse">
-            <circle cx="1.5" cy="1.5" r="1" fill="#6c757d" />
-            <circle cx="4.5" cy="4" r="0.8" fill="#dee2e6" />
-          </pattern>
+          <ForegroundDefs />
         </defs>
 
-        <Stall occupiedLabel={occupiedLabel} waiting={waiting} knocking={has('knock')} />
+        <DoorOverlay occupiedLabel={occupiedLabel} waiting={waiting} knocking={has('knock')} />
+        <Spider />
         <Legs shake={has('poop') || has('fart') || has('phlegm')} />
         {shape && <Hand shape={shape} inhaling={cigarette?.inhaling ?? false} motion={motion} />}
         {ember && <TipSmoke x={ember.x} y={ember.y} />}
@@ -761,6 +700,7 @@ export function FirstPerson({ snapshot, selfId, serverNow, bubbles, effects, con
           <FpEffect key={effect.id} effect={effect} ember={ember} />
         ))}
 
+        <Fluorescent />
         <rect width="1000" height="700" fill="url(#fp-vignette)" pointerEvents="none" />
       </svg>
 

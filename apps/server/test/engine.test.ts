@@ -7,14 +7,18 @@ let sent: Record<string, ServerEnvelope[]>;
 let closed: Record<string, number>;
 let engine: Engine;
 let seq = 0;
+/** 엔진이 쓰는 난수. 기본값은 확률 변주(기침·도넛)가 생기지 않는 쪽 */
+let nextRandom = 0.99;
 
 beforeEach(() => {
   clock = 1_000_000;
   sent = {};
   closed = {};
   seq = 0;
+  nextRandom = 0.99;
   engine = new Engine({
     now: () => clock,
+    random: () => nextRandom,
     out: {
       send: (id, m) => void (sent[id] ??= []).push(m),
       close: (id, code) => void (closed[id] = code),
@@ -504,6 +508,8 @@ describe('담배', () => {
     expect(snap('a').booth.cigarette).not.toBeNull();
     advanceAlive(5_000, ['a']);
     expect(snap('a').booth.cigarette).toBeNull();
+    // 끄지 않고 다 태우면 손가락을 덴다
+    expect(last('a', 'sound.play')).toMatchObject({ payload: { action: 'burnout' } });
 
     // 다시 피우면서 계속 빨면 시간보다 일찍 다 탄다
     smoke('a', 'take');
@@ -520,6 +526,55 @@ describe('담배', () => {
     }
     expect(snap('a').booth.cigarette).toBeNull();
     expect(puffs).toBeLessThan(puffsToBurn);
+  });
+
+  it('흡입하다 확률로 기침하고, 내뿜은 연기가 확률로 도넛이 된다 (서버가 정해 모두에게 같게 보낸다)', () => {
+    join('a', 'A');
+    join('b', 'B');
+    raw('a', 'booth.enter');
+    smoke('a', 'take');
+    wait(2100, ['a', 'b']);
+    smoke('a', 'light');
+
+    nextRandom = 0.99;
+    smoke('a', 'puff');
+    expect(last('b', 'sound.play')?.payload).not.toHaveProperty('variant');
+    wait(1600, ['a', 'b']);
+    smoke('a', 'exhale');
+    expect(last('b', 'sound.play')?.payload).not.toHaveProperty('variant');
+
+    nextRandom = 0;
+    wait(1600, ['a', 'b']);
+    smoke('a', 'puff');
+    for (const id of ['a', 'b']) expect(last(id, 'sound.play')).toMatchObject({ payload: { action: 'puff', variant: 'cough' } });
+    wait(1600, ['a', 'b']);
+    smoke('a', 'exhale');
+    for (const id of ['a', 'b']) expect(last(id, 'sound.play')).toMatchObject({ payload: { action: 'exhale', variant: 'ring' } });
+  });
+
+  it('빨다가 필터까지 다 태우면 그 자리에서 손가락을 덴다', () => {
+    join('a', 'A');
+    raw('a', 'booth.enter');
+    smoke('a', 'take');
+    wait(2100);
+    smoke('a', 'light');
+    // 거의 다 탄 상태에서 한 모금
+    advanceAlive(engine.config.cigaretteBurnMs - engine.config.cigarettePuffBurnMs, ['a']);
+    smoke('a', 'puff');
+    expect(snap('a').booth.cigarette).toBeNull();
+    const sounds = (sent.a ?? []).filter((m) => m.type === 'sound.play').slice(-2);
+    expect(sounds.map((m) => m.type === 'sound.play' && m.payload.action)).toEqual(['puff', 'burnout']);
+  });
+
+  it('직접 끄면 손가락을 데지 않는다', () => {
+    join('a', 'A');
+    raw('a', 'booth.enter');
+    smoke('a', 'take');
+    wait(2100);
+    smoke('a', 'light');
+    smoke('a', 'snuff_wall');
+    advanceAlive(engine.config.cigaretteBurnMs, ['a']);
+    expect((sent.a ?? []).some((m) => m.type === 'sound.play' && m.payload.action === 'burnout')).toBe(false);
   });
 
   it('부스를 나가면 들고 있던 담배는 사라진다', () => {
@@ -559,8 +614,8 @@ describe('로비로 나가기 (session.close)', () => {
   });
 });
 
-describe('침 / 가래침', () => {
-  it.each(['spit', 'phlegm'])('%s: 부스 안에서만 가능하고 전원에게 소리를 보내며 쿨다운이 따로 적용된다', (action) => {
+describe('침 / 가래침 / 닦기', () => {
+  it.each(['spit', 'phlegm', 'wipe'])('%s: 부스 안에서만 가능하고 전원에게 소리를 보내며 쿨다운이 따로 적용된다', (action) => {
     join('a', 'A');
     join('b', 'B');
     raw('b', 'action.perform', { action });

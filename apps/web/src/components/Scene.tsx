@@ -348,6 +348,38 @@ function SpitShot({ id, phlegm }: { id: string; phlegm: boolean }) {
   );
 }
 
+/** 기침: 환기구에서 연기가 콜록콜록 세 번 끊어 터져 나온다 */
+function CoughPuffs({ id }: { id: string }) {
+  const rand = seededRandom(id);
+  return (
+    <g className="fx" transform={`translate(${VENT_X} ${VENT_Y})`} aria-hidden="true">
+      <g filter="url(#fx-gas-blur)">
+        {[1.05, 1.4, 1.72].flatMap((at, k) =>
+          Array.from({ length: 4 }, (_, i) => (
+            <circle
+              key={`${k}-${i}`}
+              className="smoke-puff"
+              r={5 + rand() * 6}
+              style={{ '--dx': `${(rand() - 0.5) * 70}px`, '--dy': `${-(30 + rand() * 40)}px`, animationDelay: `${at + i * 0.03}s` } as CSSProperties}
+            />
+          )),
+        )}
+      </g>
+    </g>
+  );
+}
+
+/** 도넛 연기: 환기구에서 고리 모양 연기가 하나씩 떠올라 커진다 */
+function SmokeRings() {
+  return (
+    <g className="fx" transform={`translate(${VENT_X} ${VENT_Y})`} aria-hidden="true">
+      {[0.15, 0.6, 1.05].map((at) => (
+        <ellipse key={at} className="smoke-ring" rx="11" ry="5" style={{ animationDelay: `${at}s` }} />
+      ))}
+    </g>
+  );
+}
+
 function ActionEffect({ effect }: { effect: Effect }) {
   switch (effect.action) {
     case 'fart':
@@ -361,9 +393,18 @@ function ActionEffect({ effect }: { effect: Effect }) {
     case 'light':
       return <LightSpark id={effect.id} />;
     case 'puff':
-      return <PuffGlow />;
+      return effect.variant === 'cough' ? (
+        <>
+          <PuffGlow />
+          <CoughPuffs id={effect.id} />
+        </>
+      ) : (
+        <PuffGlow />
+      );
     case 'exhale':
-      return <ExhaleCloud id={effect.id} />;
+      return effect.variant === 'ring' ? <SmokeRings /> : <ExhaleCloud id={effect.id} />;
+    case 'burnout':
+      return <LightSpark id={effect.id} />;
     case 'ash':
       return <AshFall id={effect.id} />;
     case 'snuff_wall':
@@ -697,7 +738,7 @@ export function Scene({ snapshot, selfId, serverNow, bubbles, effects }: ScenePr
 
   // 똥은 부스와 화면이 크게 흔들리고, 방귀·비데·노크·물 내리기는 부스만 살짝 떨린다
   const quake = effects.some((e) => e.action === 'poop');
-  const wobble = effects.some((e) => ['fart', 'bidet', 'knock', 'flush'].includes(e.action));
+  const wobble = effects.some((e) => ['fart', 'bidet', 'knock', 'flush', 'wipe', 'burnout'].includes(e.action) || e.variant === 'cough');
   const shake = quake ? 'booth-shake booth-shake--hard' : wobble ? 'booth-shake' : undefined;
 
   return (

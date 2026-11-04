@@ -100,7 +100,7 @@
 | FR-04 | 부스 점유자는 최대 한 명이다. 서버 처리 큐에 먼저 들어온 유효 입장 요청만 성공한다. 클라이언트 전송 시각은 순서 기준으로 쓰지 않는다. |
 | FR-05 | 입장 시 권한을 검증하고 본인 대기열 항목과 입장권을 제거한 뒤 부스를 점유한다. 퇴장은 점유자만 요청할 수 있다. |
 | FR-06 | 방귀·물 내리기는 현재 부스 사용자만 실행한다. 허용된 액션을 요청자 포함 전체에 sound 이벤트로 전달한다. |
-| FR-07 | 쿨다운은 세션·액션별로 서버에서 관리한다. 방귀 3초, 똥 4초, 물 내리기 5초, 비데 4초, 노크 3초, 침 2초, 가래침 4초다(담배는 FR-31). 노크를 뺀 액션은 부스 사용자만 실행할 수 있다. 수신한 모든 클라이언트는 소리와 함께 액션별 효과를 표시한다: 방귀는 문 아래로 새는 가스, 똥은 부스·화면 흔들림·충격파와 포물선으로 튀어 바닥에 붙는 덩어리, 비데는 지붕 위 물줄기와 물방울, 침·가래침은 문 아래로 튀어나와 바닥에 붙는 자국. 거절된 요청은 소리를 내지 않고 쿨다운도 연장하지 않는다. |
+| FR-07 | 쿨다운은 세션·액션별로 서버에서 관리한다. 방귀 3초, 똥 4초, 물 내리기 5초, 비데 4초, 노크 3초, 침 2초, 가래침 4초, 닦기 3초다(담배는 FR-31). 노크를 뺀 액션은 부스 사용자만 실행할 수 있다. 수신한 모든 클라이언트는 소리와 함께 액션별 효과를 표시한다: 방귀는 문 아래로 새는 가스, 똥은 부스·화면 흔들림·충격파와 포물선으로 튀어 바닥에 붙는 덩어리, 비데는 지붕 위 물줄기와 물방울, 침·가래침은 문 아래로 튀어나와 바닥에 붙는 자국, 닦기는 (adult 1인칭에서) 롤에서 휴지를 풀어 뜯은 뒤 닦는 손 동작. 거절된 요청은 소리를 내지 않고 쿨다운도 연장하지 않는다. |
 | FR-08 | 새로고침·재접속·퇴장·재입장으로 쿨다운을 초기화하지 않는다. 각 액션의 쿨다운은 서로 독립적이다. |
 
 ### 대기열
@@ -147,6 +147,8 @@
 | FR-31 | 끄는 방법은 벽에 지지기(snuff_wall), 변기에 버리기(snuff_toilet), 바닥에 버리고 비비기(snuff_floor) 중에서 고른다. 담배 쿨다운은 꺼내기 2초, 불 붙이기 3초, 흡입·내뿜기 1.5초, 재 털기·끄기 2초다. 불이 붙어 있는 동안 바깥 화면에서는 부스 지붕 환기구로 연기가 피어오른다. |
 | FR-32 | 입장 화면에서 보는 방식을 normal / adult 중에 고른다. 서버와 상태는 하나를 공유하고 화면만 다르다. normal은 부스에 들어가도 바깥 3인칭 화면을 유지하고, adult는 FR-28의 1인칭 화면을 쓴다. adult를 고를 때는 "성인입니까?" 확인(예 / 돌아가기)을 거치며, 고른 방식은 브라우저에 저장되고 메인 화면 상단에서 바꿀 수 있다. |
 | FR-33 | 메인 화면 상단 `[로비로]`를 누르면 `session.close`로 세션을 바로 끝내고 이름·모드 선택 화면으로 돌아간다. 서버는 유예 시간 없이 세션을 지워 부스·줄 자리를 즉시 다음 사람에게 넘기고(입장권 재조정), 연결을 1000으로 닫는다. 클라이언트는 저장된 토큰을 지우고 마지막 이름을 입력칸에 채워 둔다. 부스나 줄에 있을 때는 자리를 잃는다고 한 번 확인한다. |
+| FR-34 | 흡입하면 25% 확률로 기침(`cough`), 내뿜으면 35% 확률로 도넛 연기(`ring`)가 된다. 확률은 서버가 정해 `sound.play`의 `variant`로 모두에게 같은 값을 보낸다. 기침하면 들이마신 뒤 콜록콜록 연기가 터져 나오며 화면이 들썩이고, 도넛 연기는 고리 모양 연기가 하나씩 떠오른다. |
+| FR-35 | 끄지 않은 담배가 필터까지 다 타면(시간이 지나거나 마지막 모금을 빨아서) 서버가 `sound.play`로 `burnout`을 보낸다. 1인칭에서는 "아뜨뜨!!" 하고 손이 움찔하며 꽁초를 떨어뜨리고, 바깥에서는 환기구에서 불똥이 튄다. 직접 끄면 생기지 않는다. |
 
 ## 5. 서버 상태 모델 / 상태 전이
 
@@ -223,7 +225,7 @@ stateDiagram-v2
 | booth.leave | `{}` | 부스 퇴장 |
 | queue.join | `{}` | 대기열 참여 |
 | queue.cancel | `{}` | 대기 취소, 본인 입장권도 반납 |
-| action.perform | `{action}` | fart / poop / flush / bidet / knock / spit / phlegm / take / light / puff / exhale / ash / snuff_wall / snuff_toilet / snuff_floor |
+| action.perform | `{action}` | fart / poop / flush / bidet / knock / spit / phlegm / wipe / take / light / puff / exhale / ash / snuff_wall / snuff_toilet / snuff_floor |
 | chat.send | `{text}` | 채팅 메시지 전송(말풍선) |
 | heartbeat.pong | `{nonce}` | 서버 ping에 즉시 응답 |
 
@@ -255,7 +257,7 @@ stateDiagram-v2
 | state.snapshot | 전체 또는 동기화 요청자 | serverInstanceId, revision, participants, booth, queue, priority, self |
 | request.ok | 요청자 | operation, revision, 필요 시 cooldownUntil |
 | request.error | 요청자 | code, message, 필요 시 retryAfterMs, cooldownUntil |
-| sound.play | 전체, 실행자 포함 | eventId, actorId, action, occurredAt |
+| sound.play | 전체, 실행자 포함 | eventId, actorId, action(액션 또는 `burnout`), occurredAt, 필요 시 variant(`cough` / `ring`) |
 | chat.message | 연결된 전체, 보낸 사람 포함 | messageId, userId, text, at |
 | heartbeat.ping | 연결별 | nonce |
 | session.replaced | 이전 연결 | code, message |
@@ -400,7 +402,7 @@ booth.occupantId가 있으면 priority는 null이다. revision은 같은 서버 
 | poop | 부스 사용자 | `/sounds/poop.mp3` | 1~1.5초 |
 | flush | 부스 사용자 | `/sounds/flush.mp3` | 3~4초 |
 | knock | 사용 중인 부스의 대기열 맨 앞 | `/sounds/knock.mp3` | 1초 내외 |
-| bidet / spit / phlegm / 담배 액션 | 부스 사용자 | 파일 없이 Web Audio로 합성 | 0.5~2초 |
+| bidet / spit / phlegm / wipe / 담배 액션 | 부스 사용자 | 파일 없이 Web Audio로 합성 | 0.5~2초 |
 
 - 기본 포맷은 MP3, 필요 시 동일 이름의 OGG를 추가한다. 재배포 가능한 라이선스의 파일을 사용하고 음량 편차를 줄인다.
 - 이름 화면의 `[입장]` 클릭 안에서 AudioContext 생성·resume 등 unlock을 시도한다. 네트워크 응답을 기다린 뒤 unlock하지 않는다.

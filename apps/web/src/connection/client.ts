@@ -5,6 +5,8 @@ import {
   type ErrorCode,
   type ServerEnvelope,
   type Snapshot,
+  type SoundAction,
+  type SoundVariant,
 } from '@open-toilet/protocol';
 import { sound } from '../audio/sound';
 
@@ -24,7 +26,9 @@ export type ViewMode = 'normal' | 'adult';
 
 export interface Effect {
   id: string;
-  action: ActionType;
+  action: SoundAction;
+  /** 서버가 확률로 정한 변주 (기침·도넛 연기) */
+  variant?: SoundVariant;
 }
 
 export interface ClientState {
@@ -63,7 +67,8 @@ const WATCHDOG_MS = 30_000;
 const SOUND_MAX_AGE_MS = 2_000;
 const MAX_CONCURRENT_EVENT_IDS = 256;
 /** 액션별 효과 지속 시간. CSS 애니메이션 길이보다 조금 길게 잡는다. */
-const EFFECT_MS: Record<ActionType, number> = {
+const EFFECT_MS: Record<SoundAction, number> = {
+  burnout: 2_200,
   fart: 2_000,
   poop: 2_400,
   flush: 2_600,
@@ -79,9 +84,10 @@ const EFFECT_MS: Record<ActionType, number> = {
   snuff_floor: 2_200,
   spit: 1_600,
   phlegm: 2_800,
+  wipe: 2_800,
 };
 
-const ACTION_TEXT: Record<ActionType, string> = {
+const ACTION_TEXT: Record<SoundAction, string> = {
   fart: '방귀를 뀌었습니다 💨',
   poop: '똥을 쌌습니다 💩',
   flush: '물을 내렸습니다 🚽',
@@ -96,8 +102,17 @@ const ACTION_TEXT: Record<ActionType, string> = {
   snuff_floor: '담배를 바닥에 버리고 비벼 껐습니다 👟',
   spit: '퉤! 침을 뱉었습니다 💧',
   phlegm: '카아악… 퉷! 가래침을 뱉었습니다 🤢',
+  wipe: '휴지를 뜯어 뒤처리를 합니다 🧻',
   knock: '문을 두드립니다 ✊',
+  burnout: '담배가 손가락까지 타 들어가 "아뜨뜨!" 🔥',
 };
+
+/** 확률 변주가 붙으면 활동 문구와 효과 시간을 바꾼다 */
+const VARIANT_TEXT: Record<SoundVariant, string> = {
+  cough: '빨아들이다 사레들려 콜록콜록 기침합니다 🤧',
+  ring: '도넛 모양 연기를 뿜었습니다 🍩',
+};
+const VARIANT_MS: Record<SoundVariant, number> = { cough: 2_400, ring: 3_400 };
 
 type Listener = () => void;
 
@@ -446,7 +461,7 @@ export class GameClient {
   }
 
   private onSound(
-    payload: { eventId: string; actorId: string; action: ActionType; occurredAt: number },
+    payload: { eventId: string; actorId: string; action: SoundAction; occurredAt: number; variant?: SoundVariant },
     serverTime: number,
   ): void {
     if (this.seenEventIds.includes(payload.eventId)) return;
@@ -454,22 +469,24 @@ export class GameClient {
     if (this.seenEventIds.length > MAX_CONCURRENT_EVENT_IDS) this.seenEventIds.shift();
 
     const name = this.state.snapshot?.participants.find((p) => p.userId === payload.actorId)?.name ?? '누군가';
-    const activity: Activity = { id: payload.eventId, text: `${name}님이 ${ACTION_TEXT[payload.action]}` };
+    const what = payload.variant ? VARIANT_TEXT[payload.variant] : ACTION_TEXT[payload.action];
+    const activity: Activity = { id: payload.eventId, text: `${name}님이 ${what}` };
     this.set({ activities: [...this.state.activities, activity].slice(-3) });
     window.setTimeout(() => {
       this.set({ activities: this.state.activities.filter((a) => a.id !== activity.id) });
     }, 4_000);
 
     if (serverTime - payload.occurredAt > SOUND_MAX_AGE_MS) return; // 오래된 소리·효과는 재생하지 않는다
-    sound.play(payload.action);
-    this.addEffect(payload.eventId, payload.action);
+    sound.play(payload.action, payload.variant);
+    this.addEffect({ id: payload.eventId, action: payload.action, variant: payload.variant });
   }
 
-  private addEffect(id: string, action: ActionType): void {
-    this.set({ effects: [...this.state.effects, { id, action }] });
+  private addEffect(effect: Effect): void {
+    this.set({ effects: [...this.state.effects, effect] });
+    const ms = effect.variant ? Math.max(EFFECT_MS[effect.action], VARIANT_MS[effect.variant]) : EFFECT_MS[effect.action];
     window.setTimeout(() => {
-      this.set({ effects: this.state.effects.filter((e) => e.id !== id) });
-    }, EFFECT_MS[action]);
+      this.set({ effects: this.state.effects.filter((e) => e.id !== effect.id) });
+    }, ms);
   }
 
   /** 말풍선은 글자 수에 비례해 5~10초 동안 보이고, 같은 사람의 새 메시지가 오면 교체된다. */

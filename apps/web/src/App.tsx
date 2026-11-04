@@ -210,6 +210,9 @@ function Main({ state, snapshot, selfId }: { state: ClientState; snapshot: Snaps
             {showBidet && (
               <IconFab icon="💦" label="비데" leftMs={cooldown('bidet')} onClick={() => void client.perform('bidet')} />
             )}
+            {showBidet && (
+              <IconFab icon="🧻" label="닦기" leftMs={cooldown('wipe')} onClick={() => void client.perform('wipe')} />
+            )}
             {showFlush && (
               <IconFab icon="🚽" label="물 내리기" leftMs={cooldown('flush')} onClick={() => void client.perform('flush')} />
             )}
